@@ -27,6 +27,8 @@ class MammotionMower extends IPSModule
     private const REFRESH_LOCK_TIMEOUT = 180;
     private const RETRY_DELAYS = [5, 15];
     private const COMMAND_REFRESH_DELAY = 5;
+    private const EXTRAS_INTERVAL = 900;   // Arbeitsparameter und Aufgaben alle 15 Minuten
+    private const EXTRAS_RETRY = 300;      // nach Fehler erneut nach 5 Minuten
 
     // Systemzustand
     private const SYS_INIT = 0;
@@ -85,6 +87,8 @@ class MammotionMower extends IPSModule
         $this->RegisterAttributeString('TaskMap', '{}');
         $this->RegisterAttributeInteger('RefreshLockSince', 0);
         $this->RegisterAttributeInteger('RetryAttempt', 0);
+        $this->RegisterAttributeInteger('NextExtrasFetch', 0);
+        $this->RegisterAttributeString('ExtrasError', '');
 
         $this->RegisterTimer('UpdateTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerUpdate", 0);');
         $this->RegisterTimer('RetryTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerRetry", 0);');
@@ -110,6 +114,7 @@ class MammotionMower extends IPSModule
         $this->SetVisualizationType($this->ReadPropertyBoolean('EnableTile') ? 1 : 0);
         $this->ReleaseRefreshLock();
         $this->ResetRetry();
+        $this->WriteAttributeInteger('NextExtrasFetch', 0);
 
         if (trim($this->ReadPropertyString('DeviceID')) !== $this->ReadAttributeString('ResolvedDeviceID')) {
             $this->WriteAttributeString('ResolvedDeviceID', trim($this->ReadPropertyString('DeviceID')));
@@ -187,6 +192,8 @@ class MammotionMower extends IPSModule
         if (!$this->ReadPropertyBoolean('Active')) {
             return 'DEAKTIVIERT: Instanz ist deaktiviert.';
         }
+        // Manueller Abruf liest auch Arbeitsparameter und Aufgaben neu
+        $this->WriteAttributeInteger('NextExtrasFetch', 0);
         $ok = $this->Refresh();
         if ($this->ReadAttributeInteger('RetryAttempt') > 0) {
             return 'WIEDERHOLUNG GEPLANT: ' . (string) $this->GetValue('Diagnostic');
@@ -361,24 +368,37 @@ class MammotionMower extends IPSModule
             $this->ApplyDeviceDetails(is_array($detail['data'] ?? null) ? $detail['data'] : []);
             $steps[] = 'Gerätestatus OK';
 
+            // Arbeitsparameter und Aufgaben ändern sich selten und werden seltener abgefragt
             $partial = [];
-            try {
-                $params = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/work-params');
-                $p = is_array($params['data'] ?? null) ? $params['data'] : [];
-                $this->SetValue('KnifeHeight', (int) ($p['knifeHeight'] ?? 0));
-                $this->SetValue('Speed', (int) ($p['speed'] ?? 0));
-                $steps[] = 'Arbeitsparameter OK';
-            } catch (RuntimeException $e) {
-                if ($e->getCode() === self::ERR_AUTH) throw $e;
-                $partial[] = 'Arbeitsparameter: ' . $e->getMessage();
-            }
-            try {
-                $plans = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/plan');
-                $this->UpdateTasks(is_array($plans['data'] ?? null) ? $plans['data'] : []);
-                $steps[] = 'Aufgaben OK';
-            } catch (RuntimeException $e) {
-                if ($e->getCode() === self::ERR_AUTH) throw $e;
-                $partial[] = 'Aufgaben: ' . $e->getMessage();
+            if (time() >= $this->ReadAttributeInteger('NextExtrasFetch')) {
+                try {
+                    $params = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/work-params');
+                    $p = is_array($params['data'] ?? null) ? $params['data'] : [];
+                    $this->SetValue('KnifeHeight', (int) ($p['knifeHeight'] ?? 0));
+                    $this->SetValue('Speed', (int) ($p['speed'] ?? 0));
+                    $steps[] = 'Arbeitsparameter OK';
+                } catch (RuntimeException $e) {
+                    if ($e->getCode() === self::ERR_AUTH) throw $e;
+                    $partial[] = 'Arbeitsparameter: ' . $e->getMessage();
+                }
+                try {
+                    $plans = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/plan');
+                    $this->UpdateTasks(is_array($plans['data'] ?? null) ? $plans['data'] : []);
+                    $steps[] = 'Aufgaben OK';
+                } catch (RuntimeException $e) {
+                    if ($e->getCode() === self::ERR_AUTH) throw $e;
+                    $partial[] = 'Aufgaben: ' . $e->getMessage();
+                }
+                $this->WriteAttributeString('ExtrasError', implode(' | ', $partial));
+                $this->WriteAttributeInteger('NextExtrasFetch', time() + (count($partial) > 0 ? self::EXTRAS_RETRY : self::EXTRAS_INTERVAL));
+            } else {
+                $next = date('H:i', $this->ReadAttributeInteger('NextExtrasFetch'));
+                $cachedError = $this->ReadAttributeString('ExtrasError');
+                if ($cachedError !== '') {
+                    $partial[] = $cachedError . ' (neuer Versuch ' . $next . ')';
+                } else {
+                    $steps[] = 'Arbeitsparameter/Aufgaben aus Zwischenspeicher (neu ' . $next . ')';
+                }
             }
 
             $this->CompleteSuccess($steps, $partial);
@@ -740,9 +760,9 @@ class MammotionMower extends IPSModule
 
     private function BuildTileState(): array
     {
-        $nickname = $this->ReadAttributeString('DeviceNickname');
-        $apiName = $this->ReadAttributeString('DeviceApiName');
-        $title = $nickname !== '' ? $nickname : ($apiName !== '' ? $apiName : IPS_GetName($this->InstanceID));
+        // Kein App-Nickname: Symcon zeigt den Instanznamen bereits in der Kachel
+        $model = $this->ReadAttributeString('DeviceModel');
+        $firmware = trim((string) $this->GetValue('Firmware'));
 
         $tasks = [];
         foreach (json_decode($this->ReadAttributeString('TaskMap'), true) ?: [] as $value => $task) {
@@ -750,8 +770,8 @@ class MammotionMower extends IPSModule
         }
 
         return [
-            'title'       => $title,
-            'model'       => $this->ReadAttributeString('DeviceModel'),
+            'title'       => $model !== '' ? $model : 'Mähroboter',
+            'subtitle'    => $firmware !== '' ? 'Mammotion · Firmware ' . $firmware : 'Mammotion',
             'image'       => $this->ReadAttributeString('DeviceIconURL'),
             'active'      => $this->ReadPropertyBoolean('Active'),
             'control'     => $this->ReadPropertyBoolean('EnableControl'),

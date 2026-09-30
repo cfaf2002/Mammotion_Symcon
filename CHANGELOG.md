@@ -16,7 +16,8 @@ Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen frühe
 
 - Nutzungshinweis in der Cloud-Instanz; ohne Bestätigung werden keine Anfragen gesendet
 - Schalter **Instanz aktiv** und Status-Block in Cloud- und Mäher-Instanz
-- eigene Kachel für die Kachel-Visualisierung (HTML-SDK) mit Live-Updates, zustandsabhängigen Buttons, Bestätigung vor Start und Weiterfahrt, Akku-Ring, Signalbalken und Mähanimation; in der Instanz abschaltbar
+- eigene Kachel für die Kachel-Visualisierung (HTML-SDK) mit Live-Updates, zustandsabhängigen Buttons, Bestätigung vor Start und Weiterfahrt, Akku-Ring, Signalbalken und Mähanimation; zeigt Modell statt App-Nickname, lässt Platz für Instanzname und Vergrößern-Symbol, passt sich an die Kachelgröße an; in der Instanz abschaltbar
+- Arbeitsparameter und Aufgaben werden nur alle 15 Minuten abgefragt (nach Fehler nach 5 Minuten, bei manuellem Abruf sofort)
 - mehrere Mäher und mehrere Mammotion-Konten
 - ein gemeinsamer Token je Konto, Token-Abruf per Semaphore abgesichert
 - Fehlerarten (vorübergehend, Anmeldung, API, offline) werden von der Cloud an die Mäher weitergegeben

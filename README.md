@@ -197,12 +197,14 @@ Bereits angelegte Mäher sind mit ihrer Instanz verknüpft. Instanzen, deren Dev
 | Einstellung | Bedeutung | Standard |
 |---|---|---|
 | Device ID | vom Konfigurator gesetzt; leer = erster Mäher des Kontos | leer |
-| Abfrageintervall | zyklische Aktualisierung, mindestens 30 Sekunden | 60 |
+| Abfrageintervall | zyklische Aktualisierung von Status, Akku und Netz, mindestens 30 Sekunden | 60 |
 | Instanz aktiv | für Wartung, Transport oder Einwinterung ausschalten | an |
 | Kachel-Visualisierung (HTML) aktiv | zeigt die Instanz als eigene Kachel; aus = Standardkachel mit Variablenliste | an |
 | Schreibbefehle freigeben | erlaubt reale Steuerbefehle | aus |
 
 Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit Nickname, Modell und Device-ID, Systemzustand, Diagnose, letzte Aktualisierung, letzten Befehl und ob Schreibbefehle freigegeben sind.
+
+Arbeitsparameter (Mähhöhe, Geschwindigkeit) und Aufgaben ändern sich selten. Sie werden deshalb nur alle 15 Minuten abgefragt, nach einem Fehler erneut nach 5 Minuten, und bei **Jetzt aktualisieren** sofort. Das entlastet die Cloud und vermeidet unnötige Warnungen.
 
 ### Objektbaum
 
@@ -288,11 +290,11 @@ Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit 
 
 **Inhalt:**
 
-- Nickname und Modell, Gerätebild aus der Mammotion-Cloud (sonst Mäher-Symbol)
+- Modell und Firmware, Gerätebild aus der Mammotion-Cloud (sonst Mäher-Symbol)
 - Status-Badge, pulsierend beim Mähen, Laden und bei der Heimfahrt
 - Akku-Ring mit Farbwechsel (grün, gelb unter 40 %, rot unter 20 %)
 - Mähhöhe, WLAN und Mobilfunk mit Signalbalken und Qualitätsbewertung
-- Hinweiszeile bei Fehlern, Teilausfall, Offline oder unbekanntem Rohstatus
+- kurze Hinweise bei Fehlern, Offline oder unbekanntem Rohstatus, gelber Hinweis-Chip wenn Aufgaben oder Mähhöhe gerade nicht abrufbar sind
 - „Aktualisiert vor x Min.“ und letzter Befehl
 - animierte Mähbahnen im Hintergrund, solange der Mäher mäht
 
@@ -321,7 +323,7 @@ Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit 
 | API- oder Cloudfehler | Orange |
 | Offline, deaktiviert | Grau |
 
-Der Name in der Kachel wird so bestimmt: Nickname aus der Mammotion-App, technischer Gerätename, Instanzname.
+Der Instanzname (zum Beispiel „Mähroboter“) wird von IP-Symcon oben links in der Kachel angezeigt. Die Kachel selbst zeigt deshalb das Modell und nicht den Nickname aus der Mammotion-App. Oben bleibt Platz für Instanzname und Vergrößern-Symbol.
 
 ## PHP-Funktionen
 
