@@ -95,8 +95,22 @@
   .lastwork.past svg { color: #f59e0b; }
   .totals { display: none; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .note.err { color: #fca5a5; background: rgba(239, 68, 68, .1); border-color: rgba(239, 68, 68, .35); }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions { display: flex; flex-direction: column; gap: 8px; }
   .actions:empty { display: none; }
+  .row { display: flex; gap: 8px; }
+  .cmdbar { display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(15, 23, 42, .55); border: 1px solid var(--line); }
+  .cmd {
+    flex: 1 1 0; min-width: 0; height: 34px; padding: 0 8px; border: 0; border-radius: 10px; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 700; color: var(--mut); background: transparent;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden;
+    transition: background .2s, color .2s, transform .1s;
+  }
+  .cmd span { overflow: hidden; text-overflow: ellipsis; }
+  .cmd svg { width: 14px; height: 14px; flex: 0 0 auto; }
+  .cmd:hover { background: rgba(148, 163, 184, .14); color: var(--txt); }
+  .cmd:active { transform: scale(.96); }
+  .cmd.hot { color: var(--txt); background: color-mix(in srgb, var(--a) 26%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a) 55%, transparent); }
+  .cmd.confirm { color: #111827; background: #f59e0b; }
   .btn, .sel {
     flex: 1 1 0; min-width: 0; height: 40px; padding: 0 12px; border-radius: 12px; font: inherit; font-size: 13px; font-weight: 700;
     color: var(--txt); background: rgba(148, 163, 184, .12); border: 1px solid var(--line); cursor: pointer;
@@ -127,11 +141,13 @@
     .hero { gap: 30px; }
   }
   @container tile (min-height: 540px) { .totals { display: grid; } .totals.hide { display: none; } }
-  @container tile (max-height: 380px) { .lastwork { display: none; } }
+  @container tile (max-height: 450px) { .lastwork { display: none; } }
   /* Kleinere Kacheln: Inhalte schrittweise ausblenden */
-  @container tile (max-height: 330px) { .chips { display: none; } }
-  @container tile (max-height: 250px) { footer { display: none; } .model { display: none; } }
-  @container tile (max-height: 190px) { .actions { display: none; } .sub, .note { display: none; } }
+  @container tile (max-height: 400px) { .chips { display: none; } }
+  @container tile (max-height: 300px) { .row { display: none; } }
+  @container tile (max-width: 560px) { .cmd span { display: none; } .cmd { padding: 0; } }
+  @container tile (max-height: 260px) { footer { display: none; } .model { display: none; } }
+  @container tile (max-height: 200px) { .actions { display: none; } .sub, .note { display: none; } }
   @container tile (max-width: 330px) {
     .tile { padding: 42px 12px 12px; gap: 12px; }
     .ring { width: 84px; height: 84px; } .pct b { font-size: 21px; }
@@ -281,6 +297,26 @@
       return d.length > 70 ? d.substring(0, 67) + ' …' : d;
     }
 
+    function cmd(key, label, icon, hot, action, needsConfirm) {
+      var b = document.createElement('button');
+      b.className = 'cmd' + (hot ? ' hot' : '');
+      b.title = label;
+      b.innerHTML = ICON[icon] + '<span></span>';
+      b.lastChild.textContent = label;
+      if (confirmKey === key) { b.className = 'cmd confirm'; b.lastChild.textContent = 'Wirklich?'; }
+      b.onclick = function () {
+        if (needsConfirm && confirmKey !== key) {
+          confirmKey = key; clearTimeout(confirmTimer);
+          confirmTimer = setTimeout(function () { confirmKey = null; render(); }, 4000);
+          render(); return;
+        }
+        confirmKey = null; clearTimeout(confirmTimer);
+        action(); render();
+        txt('msg', 'Befehl gesendet …');
+      };
+      return b;
+    }
+
     function renderActions() {
       var box = $('actions');
       box.innerHTML = '';
@@ -295,32 +331,34 @@
       }
 
       var op = S.op;
-      if (op === 1 || op === 4 || op === 8) {
-        if (S.tasks.length > 0) {
-          var sel = document.createElement('select');
-          sel.className = 'sel';
-          S.tasks.forEach(function (t) {
-            var o = document.createElement('option');
-            o.value = t.value; o.textContent = t.name;
-            if (String(t.value) === String(selectedTask)) o.selected = true;
-            sel.appendChild(o);
-          });
-          selectedTask = sel.value;
-          sel.onchange = function () { selectedTask = sel.value; confirmKey = null; render(); };
-          box.appendChild(sel);
-          box.appendChild(button('start', 'Starten', 'play', 'primary', function () { requestAction('Task', parseInt(selectedTask, 10)); }, true));
-        }
-        if (op !== 4) box.appendChild(button('home', 'Heim', 'home', '', function () { control(4); }));
-      } else if (op === 2) {
-        box.appendChild(button('pause', 'Pause', 'pause', 'primary', function () { control(1); }));
-        box.appendChild(button('home', 'Heim', 'home', '', function () { control(4); }));
-      } else if (op === 3) {
-        box.appendChild(button('resume', 'Weiter', 'play', 'primary', function () { control(2); }, true));
-        box.appendChild(button('stop', 'Stop', 'stop', '', function () { control(3); }));
-        box.appendChild(button('home', 'Heim', 'home', '', function () { control(4); }));
-      } else if (op === 5) {
-        box.appendChild(button('cancel', 'Heimfahrt abbrechen', 'cancel', '', function () { control(5); }));
+      // Zeile 1: Aufgabe wählen und starten
+      if (S.tasks.length > 0) {
+        var row = document.createElement('div');
+        row.className = 'row';
+        var sel = document.createElement('select');
+        sel.className = 'sel';
+        S.tasks.forEach(function (t) {
+          var o = document.createElement('option');
+          o.value = t.value; o.textContent = t.name;
+          if (String(t.value) === String(selectedTask)) o.selected = true;
+          sel.appendChild(o);
+        });
+        selectedTask = sel.value;
+        sel.onchange = function () { selectedTask = sel.value; confirmKey = null; render(); };
+        row.appendChild(sel);
+        row.appendChild(button('start', 'Starten', 'play', (op === 1 || op === 4) ? 'primary' : '', function () { requestAction('Task', parseInt(selectedTask, 10)); }, true));
+        box.appendChild(row);
       }
+
+      // Zeile 2: alle Befehle, die zum Zustand passenden hervorgehoben
+      var bar = document.createElement('div');
+      bar.className = 'cmdbar';
+      bar.appendChild(cmd('pause', 'Pause', 'pause', op === 2, function () { control(1); }));
+      bar.appendChild(cmd('resume', 'Fortsetzen', 'play', op === 3, function () { control(2); }, true));
+      bar.appendChild(cmd('stop', 'Stop', 'stop', op === 3, function () { control(3); }));
+      bar.appendChild(cmd('home', 'Zur Ladestation', 'home', op === 1 || op === 2 || op === 3, function () { control(4); }));
+      bar.appendChild(cmd('cancel', 'Heimfahrt abbrechen', 'cancel', op === 5, function () { control(5); }));
+      box.appendChild(bar);
     }
 
     function render() {

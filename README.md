@@ -329,20 +329,24 @@ Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit 
 - „Aktualisiert vor x Min.“ und letzter Befehl
 - animierte Mähbahnen im Hintergrund, solange der Mäher mäht
 
-**Bedienung** (nur mit **Schreibbefehle freigeben**, sonst Hinweis „Steuerung gesperrt“). Die Buttons passen sich dem Zustand an:
+**Bedienung** (nur mit **Schreibbefehle freigeben**, sonst Hinweis „Steuerung gesperrt“):
 
-| Zustand | Buttons |
+- **Zeile 1:** Aufgabe wählen und **Starten**
+- **Zeile 2:** alle Befehle als Leiste: **Pause**, **Fortsetzen**, **Stop**, **Zur Ladestation**, **Heimfahrt abbrechen**
+
+Alle Befehle sind immer verfügbar. Die zum aktuellen Zustand passenden werden hervorgehoben:
+
+| Zustand | Hervorgehoben |
 |---|---|
-| Bereit | Aufgabe wählen, Starten, Heim |
-| Lädt | Aufgabe wählen, Starten |
-| Mäht | Pause, Heim |
-| Pausiert | Weiter, Stop, Heim |
+| Bereit | Starten, Zur Ladestation |
+| In der Station | Starten |
+| Mäht | Pause, Zur Ladestation |
+| Pausiert | Fortsetzen, Stop, Zur Ladestation |
 | Heimfahrt | Heimfahrt abbrechen |
-| Offline, Fehler | keine |
 
-**Starten** und **Weiter** setzen den Mäher in Bewegung und müssen deshalb mit einem zweiten Tipp auf „Wirklich?“ bestätigt werden (4 Sekunden Zeit).
+**Starten** und **Fortsetzen** setzen den Mäher in Bewegung und müssen deshalb mit einem zweiten Tipp auf „Wirklich?“ bestätigt werden (4 Sekunden Zeit). Offline oder bei einem Fehler werden keine Befehle angeboten.
 
-**Größen:** Die Kachel passt sich an. Auf kleineren Kacheln werden nacheinander Kennzahlen, Fußzeile und Buttons ausgeblendet. Auf sehr kleinen Kacheln bleiben Name, Akku-Ring und Status.
+**Größen:** Die Kachel passt sich an. Auf schmaleren Kacheln zeigt die Befehlsleiste nur Symbole (Name als Tooltip). Auf niedrigeren Kacheln werden nacheinander Verlaufszeilen, Kennzahlen, Aufgabenzeile, Fußzeile und Befehle ausgeblendet. Auf sehr kleinen Kacheln bleiben Name, Akku-Ring und Status.
 
 | Zustand | Farbe |
 |---|---|

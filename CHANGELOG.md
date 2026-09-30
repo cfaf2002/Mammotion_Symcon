@@ -17,6 +17,7 @@ Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen frühe
 - Nutzungshinweis in der Cloud-Instanz; ohne Bestätigung werden keine Anfragen gesendet
 - Schalter **Instanz aktiv** und Status-Block in Cloud- und Mäher-Instanz
 - eigene Kachel für die Kachel-Visualisierung (HTML-SDK) mit Live-Updates, zustandsabhängigen Buttons, Bestätigung vor Start und Weiterfahrt, Akku-Ring, Signalbalken und Mähanimation; zeigt Modell statt App-Nickname, lässt Platz für Instanzname und Vergrößern-Symbol, passt sich an die Kachelgröße an; in der Instanz abschaltbar
+- Kachel mit fester Befehlsleiste (Pause, Fortsetzen, Stop, Zur Ladestation, Heimfahrt abbrechen) zusätzlich zu „Aufgabe wählen + Starten“; passende Befehle hervorgehoben, Starten und Fortsetzen mit Bestätigung
 - Statistik (`work-reports/summary`): Einsätze, gemähte Fläche, Zeitersparnis, CO₂-Einsparung
 - letzter Einsatz (`work-reports/search` und Detail): Zeitpunkt, Ergebnis, Art, Fläche, Dauer, Fortschritt, Energie, Mähhöhe und Geschwindigkeit
 - Fehlerprotokoll (`error-codes/search`): letzter Gerätefehler mit Code und Beschreibung, Anzahl der letzten 30 Tage; in der Kachel rot nur bei aktivem Gerätefehler oder Meldungen der letzten 30 Minuten, ältere Meldungen der letzten 24 Stunden als Verlaufszeile mit Uhrzeit
