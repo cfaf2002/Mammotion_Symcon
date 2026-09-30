@@ -216,6 +216,8 @@ Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit
 
 Verlauf und Fehlerprotokoll umfassen die letzten 30 Tage. Da die API keine Sortierung garantiert, wählt das Modul selbst den jüngsten Eintrag.
 
+Die Work-Report-Endpunkte lehnen je nach Konto oder Gerät manche Anfragen mit Code 40200 ab. Das Modul probiert deshalb mehrere gültige Anfrageformen und merkt sich die funktionierende (sichtbar im Debug der Mäher-Instanz). Lehnt die API alle ab, erscheint in der Diagnose „derzeit nicht bereitgestellt“, ohne gelbe Warnung. Neuer Versuch nach 6 Stunden oder sofort mit **Jetzt aktualisieren**.
+
 ### Sicherheitshinweis zu den Arbeitsparametern
 
 Die API bietet `GET /v1/mower/{deviceId}/work-params` für die aktuellen Arbeitsparameter. Laut der Home-Assistant-Integration für die Mammotion Open API hat ein LUBA 2 nach einem Aufruf dieses Endpunkts unerwartet mit dem Mähen begonnen. **Das Modul ruft diesen Endpunkt deshalb nicht auf.** Mähhöhe und Geschwindigkeit stammen stattdessen aus dem Bericht des letzten Einsatzes und zeigen die dort verwendeten Werte.

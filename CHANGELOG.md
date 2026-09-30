@@ -24,6 +24,8 @@ Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen frühe
 - Aufgaben, Statistik, Verlauf und Fehler werden alle 15 Minuten abgefragt (nach Fehler nach 5 Minuten, 2 Minuten nach Einsatzende, bei manuellem Abruf sofort)
 - Betriebsstatus „In der Station“ bei Standby mit Ladestatus ungleich 0
 - Cloud akzeptiert API-Code 0 und 200 als Erfolg
+- Statistik und Verlauf probieren mehrere gültige Anfrageformen (mit und ohne Zeitraum und Seitenangabe) und merken sich die, die die API akzeptiert
+- lehnt die API Statistik oder Verlauf fachlich ab (z. B. Code 40200), gilt das nicht als Fehler: Anzeige „derzeit nicht bereitgestellt“, neuer Versuch nach 6 Stunden oder bei „Jetzt aktualisieren“
 
 ### Sicherheit
 

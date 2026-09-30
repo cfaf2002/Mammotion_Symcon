@@ -38,6 +38,7 @@ class MammotionMower extends IPSModule
     private const EXTRAS_INTERVAL = 900;   // Aufgaben, Statistik, Verlauf, Fehler alle 15 Minuten
     private const EXTRAS_RETRY = 300;      // nach Fehler erneut nach 5 Minuten
     private const REPORT_DAYS = 30;        // Zeitraum für Verlauf und Fehlerprotokoll
+    private const UNAVAILABLE_BACKOFF = 21600; // von der API abgelehnte Zusatzdaten erst nach 6 Stunden erneut versuchen
 
     // Systemzustand
     private const SYS_INIT = 0;
@@ -100,6 +101,8 @@ class MammotionMower extends IPSModule
         $this->RegisterAttributeInteger('NextExtrasFetch', 0);
         $this->RegisterAttributeString('ExtrasError', '');
         $this->RegisterAttributeString('LastWorkId', '');
+        $this->RegisterAttributeString('RequestVariants', '{}');
+        $this->RegisterAttributeString('Unavailable', '{}');
         $this->RegisterAttributeInteger('PreviousOperation', -1);
 
         $this->RegisterTimer('UpdateTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerUpdate", 0);');
@@ -204,8 +207,9 @@ class MammotionMower extends IPSModule
         if (!$this->ReadPropertyBoolean('Active')) {
             return 'DEAKTIVIERT: Instanz ist deaktiviert.';
         }
-        // Manueller Abruf liest auch Arbeitsparameter und Aufgaben neu
+        // Manueller Abruf liest alle Zusatzdaten neu, auch zuvor abgelehnte
         $this->WriteAttributeInteger('NextExtrasFetch', 0);
+        $this->WriteAttributeString('Unavailable', '{}');
         $ok = $this->Refresh();
         if ($this->ReadAttributeInteger('RetryAttempt') > 0) {
             return 'WIEDERHOLUNG GEPLANT: ' . (string) $this->GetValue('Diagnostic');
@@ -407,15 +411,31 @@ class MammotionMower extends IPSModule
                 if ($this->ReadPropertyBoolean('EnableReports')) {
                     $jobs += ['Statistik' => 'FetchSummary', 'Verlauf' => 'FetchLastWork', 'Fehlerprotokoll' => 'FetchErrors'];
                 }
+                $unavailable = json_decode($this->ReadAttributeString('Unavailable'), true) ?: [];
+                $info = [];
                 foreach ($jobs as $label => $method) {
+                    if (($unavailable[$label]['until'] ?? 0) > time()) {
+                        $info[] = $label . ': derzeit nicht bereitgestellt (' . $unavailable[$label]['reason'] . ', nächster Versuch ' . date('H:i', $unavailable[$label]['until']) . ')';
+                        continue;
+                    }
                     try {
                         $this->$method($id);
+                        unset($unavailable[$label]);
                         $steps[] = $label . ' OK';
                     } catch (RuntimeException $e) {
                         if ($e->getCode() === self::ERR_AUTH) throw $e;
+                        if ($e->getCode() === self::ERR_API && $label !== 'Aufgaben') {
+                            // Fachliche Ablehnung durch die API: kein Dauerfehler, später erneut versuchen
+                            $reason = preg_match('/Code (\d+)/', $e->getMessage(), $m) ? 'Code ' . $m[1] : 'abgelehnt';
+                            $unavailable[$label] = ['until' => time() + self::UNAVAILABLE_BACKOFF, 'reason' => $reason];
+                            $info[] = $label . ': derzeit nicht bereitgestellt (' . $reason . ', nächster Versuch ' . date('H:i', $unavailable[$label]['until']) . ')';
+                            continue;
+                        }
                         $partial[] = $label . ': ' . $e->getMessage();
                     }
                 }
+                $this->WriteAttributeString('Unavailable', (string) json_encode($unavailable));
+                $steps = array_merge($steps, $info);
                 $this->WriteAttributeString('ExtrasError', implode(' | ', $partial));
                 $this->WriteAttributeInteger('NextExtrasFetch', time() + (count($partial) > 0 ? self::EXTRAS_RETRY : self::EXTRAS_INTERVAL));
             } else {
@@ -694,9 +714,50 @@ class MammotionMower extends IPSModule
         $this->UpdateTasks(is_array($plans['data'] ?? null) ? $plans['data'] : []);
     }
 
+    /**
+     * Probiert mehrere gültige Anfrageformen nacheinander und merkt sich die erste, die die API akzeptiert.
+     * Hintergrund: Die Work-Report-Endpunkte lehnen je nach Konto oder Gerät manche Parameter mit Code 40200 ab.
+     */
+    private function PostWithVariants(string $path, array $variants): array
+    {
+        $known = json_decode($this->ReadAttributeString('RequestVariants'), true) ?: [];
+        $order = array_keys($variants);
+        if (isset($known[$path]) && isset($variants[$known[$path]])) {
+            $order = array_values(array_unique(array_merge([$known[$path]], $order)));
+        }
+        $last = null;
+        foreach ($order as $index) {
+            try {
+                $result = $this->Api('POST', $path, $variants[$index]);
+                if (($known[$path] ?? null) !== $index) {
+                    $known[$path] = $index;
+                    $this->WriteAttributeString('RequestVariants', (string) json_encode($known));
+                    $this->SendDebug('Variant', $path . ' funktioniert mit Variante ' . $index . ': ' . json_encode($variants[$index]), 0);
+                }
+                return $result;
+            } catch (RuntimeException $e) {
+                if ($e->getCode() !== self::ERR_API) throw $e;
+                $this->SendDebug('Variant', $path . ' Variante ' . $index . ' abgelehnt: ' . $e->getMessage(), 0);
+                $last = $e;
+            }
+        }
+        throw $last ?? new RuntimeException('Keine Anfragevariante verfügbar', self::ERR_API);
+    }
+
+    private function ReportRange(int $days): array
+    {
+        $now = time();
+        return ['endWorkTimeStart' => ($now - $days * 86400) * 1000, 'endWorkTimeEnd' => $now * 1000];
+    }
+
     private function FetchSummary(string $id): void
     {
-        $r = $this->Api('POST', '/v1/mower/work-reports/summary', ['deviceId' => $id]);
+        $r = $this->PostWithVariants('/v1/mower/work-reports/summary', [
+            'id-only'   => ['deviceId' => $id],
+            'paged'     => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 10],
+            'range-30d' => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 10] + $this->ReportRange(30),
+            'range-7d'  => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 10] + $this->ReportRange(7)
+        ]);
         $d = is_array($r['data'] ?? null) ? $r['data'] : [];
         $this->SetValue('TotalWorkCount', (int) ($d['workCount'] ?? 0));
         $this->SetValue('TotalWorkArea', round((float) ($d['totalWorkArea'] ?? 0), 1));
@@ -707,13 +768,11 @@ class MammotionMower extends IPSModule
     private function FetchLastWork(string $id): void
     {
         // Die API garantiert keine Sortierung: letzte 30 Tage laden und den jüngsten Eintrag wählen
-        $now = time();
-        $r = $this->Api('POST', '/v1/mower/work-reports/search', [
-            'deviceId'         => $id,
-            'pageNumber'       => 1,
-            'pageSize'         => 50,
-            'endWorkTimeStart' => ($now - self::REPORT_DAYS * 86400) * 1000,
-            'endWorkTimeEnd'   => ($now + 3600) * 1000
+        $r = $this->PostWithVariants('/v1/mower/work-reports/search', [
+            'paged'     => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 10],
+            'range-30d' => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 20] + $this->ReportRange(self::REPORT_DAYS),
+            'range-7d'  => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 10] + $this->ReportRange(7),
+            'id-only'   => ['deviceId' => $id]
         ]);
         $records = is_array($r['data']['records'] ?? null) ? $r['data']['records'] : [];
         $latest = null;
