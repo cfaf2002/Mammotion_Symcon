@@ -1,0 +1,51 @@
+{
+  "elements": [
+    {
+      "type": "ValidationTextBox",
+      "name": "DeviceID",
+      "caption": "Device ID (leer = erster Mäher im Konto)",
+      "width": "400px"
+    },
+    {
+      "type": "NumberSpinner",
+      "name": "PollInterval",
+      "caption": "Abfrageintervall",
+      "suffix": "Sekunden",
+      "minimum": 30
+    },
+    {
+      "type": "CheckBox",
+      "name": "Active",
+      "caption": "Abruf aktiv (für Wartung oder Einwinterung ausschalten)"
+    },
+    {
+      "type": "CheckBox",
+      "name": "EnableControl",
+      "caption": "Schreibbefehle freigeben (Start, Pause, Stop, Heimfahrt)"
+    },
+    {
+      "type": "CheckBox",
+      "name": "ShowDashboard",
+      "caption": "Dashboard-Kachel anlegen"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Button",
+      "caption": "Jetzt aktualisieren",
+      "onClick": "echo MAMMO_RefreshWithResult($id);"
+    },
+    {
+      "type": "Label",
+      "caption": "Mammotion Open API v2.0 (Build 1). Zugangsdaten werden in der übergeordneten Instanz \"Mammotion Cloud\" gepflegt."
+    }
+  ],
+  "status": [
+    { "code": 102, "icon": "active", "caption": "Aktiv" },
+    { "code": 104, "icon": "inactive", "caption": "Abruf deaktiviert" },
+    { "code": 200, "icon": "error", "caption": "Abfrageintervall ungültig (mindestens 30 Sekunden)" },
+    { "code": 201, "icon": "error", "caption": "API- oder Cloudfehler, Details in der Variable Diagnose" },
+    { "code": 202, "icon": "error", "caption": "Mäher im Mammotion-Konto nicht gefunden" },
+    { "code": 203, "icon": "error", "caption": "Cloud-Instanz nicht verbunden oder nicht aktiv" }
+  ]
+}

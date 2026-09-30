@@ -1,0 +1,12 @@
+{
+  "id": "{05A01141-E5C4-4CEB-B273-A8C4C805D99D}",
+  "author": "Armin Frohwerk",
+  "name": "Mammotion Open API",
+  "url": "https://github.com/cfaf2002/MammotionOpenAPI",
+  "compatibility": {
+    "version": "9.0"
+  },
+  "version": "2.0",
+  "build": 1,
+  "date": 1790719200
+}

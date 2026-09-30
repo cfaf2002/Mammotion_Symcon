@@ -1,0 +1,11 @@
+{
+  "id": "{8297B983-0C40-4D50-8376-636028226AEE}",
+  "name": "MammotionMower",
+  "type": 3,
+  "vendor": "Mammotion",
+  "aliases": ["Mammotion Mäher", "Mammotion Mähroboter"],
+  "parentRequirements": ["{5F140107-E29A-41AA-9314-01891DDE02F9}"],
+  "childRequirements": [],
+  "implemented": ["{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"],
+  "prefix": "MAMMO"
+}

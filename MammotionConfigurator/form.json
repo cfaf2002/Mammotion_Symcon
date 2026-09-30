@@ -1,0 +1,21 @@
+{
+  "elements": [],
+  "actions": [
+    {
+      "type": "Configurator",
+      "name": "Mowers",
+      "caption": "Mäher im Mammotion-Konto",
+      "rowCount": 8,
+      "add": false,
+      "delete": true,
+      "sort": { "column": "Name", "direction": "ascending" },
+      "columns": [
+        { "caption": "Name", "name": "Name", "width": "auto" },
+        { "caption": "Modell", "name": "Model", "width": "200px" },
+        { "caption": "Device ID", "name": "DeviceID", "width": "280px" },
+        { "caption": "Online", "name": "Online", "width": "90px" }
+      ],
+      "values": []
+    }
+  ]
+}

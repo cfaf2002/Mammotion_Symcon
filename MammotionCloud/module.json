@@ -1,0 +1,11 @@
+{
+  "id": "{D26140D0-FC03-43F8-AAB0-1E4220D959EB}",
+  "name": "MammotionCloud",
+  "type": 1,
+  "vendor": "Mammotion",
+  "aliases": ["Mammotion Cloud", "Mammotion Open API Cloud"],
+  "parentRequirements": [],
+  "childRequirements": ["{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"],
+  "implemented": ["{5F140107-E29A-41AA-9314-01891DDE02F9}"],
+  "prefix": "MAMCLOUD"
+}

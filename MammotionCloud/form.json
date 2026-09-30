@@ -1,0 +1,47 @@
+{
+  "elements": [
+    {
+      "type": "Label",
+      "caption": "Zugangsdaten der Open-API-Anwendung aus dem Mammotion Developer Portal."
+    },
+    {
+      "type": "ValidationTextBox",
+      "name": "ClientID",
+      "caption": "Client ID",
+      "width": "400px"
+    },
+    {
+      "type": "PasswordTextBox",
+      "name": "ClientSecret",
+      "caption": "Client Secret",
+      "width": "400px"
+    },
+    {
+      "type": "CheckBox",
+      "name": "Active",
+      "caption": "Cloud-Verbindung aktiv"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Button",
+      "caption": "Verbindung testen",
+      "onClick": "echo MAMCLOUD_TestConnection($id);"
+    },
+    {
+      "type": "Button",
+      "caption": "Token jetzt erneuern",
+      "onClick": "echo MAMCLOUD_RenewToken($id);"
+    },
+    {
+      "type": "Label",
+      "caption": "Mammotion Open API v2.0 (Build 1). Mäher über den Konfigurator \"Mammotion Konfigurator\" anlegen."
+    }
+  ],
+  "status": [
+    { "code": 102, "icon": "active", "caption": "Aktiv" },
+    { "code": 104, "icon": "inactive", "caption": "Cloud-Verbindung deaktiviert" },
+    { "code": 200, "icon": "error", "caption": "Client-ID oder Client-Secret fehlt" },
+    { "code": 201, "icon": "error", "caption": "Anmeldung fehlgeschlagen, neuer Versuch alle 10 Minuten" }
+  ]
+}

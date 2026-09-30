@@ -1,0 +1,11 @@
+{
+  "id": "{4B26C823-BB4A-4620-95F4-505E7CF82A7C}",
+  "name": "MammotionConfigurator",
+  "type": 4,
+  "vendor": "Mammotion",
+  "aliases": ["Mammotion Konfigurator"],
+  "parentRequirements": ["{5F140107-E29A-41AA-9314-01891DDE02F9}"],
+  "childRequirements": [],
+  "implemented": ["{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"],
+  "prefix": "MAMCONF"
+}
