@@ -1,7 +1,7 @@
 # Mammotion Open API für IP-Symcon
 
-[![Version](https://img.shields.io/badge/version-2.1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
-[![Build](https://img.shields.io/badge/build-2-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
+[![Version](https://img.shields.io/badge/version-1.0-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
+[![Build](https://img.shields.io/badge/build-1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
 [![IP-Symcon](https://img.shields.io/badge/IP--Symcon-9.0%2B-orange.svg)](https://www.symcon.de/)
 [![PHP](https://img.shields.io/badge/PHP-8.x-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
 [![Mammotion Open API](https://img.shields.io/badge/Mammotion-Open%20API-success.svg)](https://developer.mammotion.com/)
@@ -9,7 +9,7 @@
 
 Integration von Mammotion-Mährobotern in IP-Symcon über die offizielle Mammotion Open API.
 
-Version **2.1** (Build 2) baut auf der Neuentwicklung 2.0 auf. Sie ist eine vollständige Neuentwicklung mit der für IP-Symcon üblichen Aufteilung in Cloud-, Geräte- und Konfigurator-Instanz. Sie ist **nicht** mit den 0.x- und 1.x-Instanzen kompatibel (neue Modul-GUIDs). Alte Instanzen vor der Installation löschen, siehe [Umstieg von 1.x](#umstieg-von-1x).
+Version **1.0** (Build 1) ist eine vollständige Neuentwicklung mit der für IP-Symcon üblichen Aufteilung in Cloud-, Geräte- und Konfigurator-Instanz sowie einer eigenen Kachel für die Kachel-Visualisierung. Sie ist **nicht** mit den Instanzen früherer Versionen kompatibel (neue Modul-GUIDs). Alte Instanzen vor der Installation löschen, siehe [Umstieg von früheren Versionen](#umstieg-von-früheren-versionen).
 
 ## Inhaltsverzeichnis
 
@@ -22,13 +22,13 @@ Version **2.1** (Build 2) baut auf der Neuentwicklung 2.0 auf. Sie ist eine voll
 - [Mammotion Cloud](#mammotion-cloud)
 - [Mammotion Konfigurator](#mammotion-konfigurator)
 - [Mammotion Mäher](#mammotion-mäher)
-- [Dashboard](#dashboard)
+- [Kachel](#kachel)
 - [PHP-Funktionen](#php-funktionen)
 - [Verwendete API-Endpunkte](#verwendete-api-endpunkte)
 - [Fehlerbehandlung und Wiederholungen](#fehlerbehandlung-und-wiederholungen)
 - [Sicherheitshinweise](#sicherheitshinweise)
 - [Fehlerbehebung](#fehlerbehebung)
-- [Umstieg von 1.x](#umstieg-von-1x)
+- [Umstieg von früheren Versionen](#umstieg-von-früheren-versionen)
 - [Bekannte Einschränkungen](#bekannte-einschränkungen)
 - [Nutzungshinweis](#nutzungshinweis)
 - [Lizenz](#lizenz)
@@ -39,7 +39,7 @@ Version **2.1** (Build 2) baut auf der Neuentwicklung 2.0 auf. Sie ist eine voll
 ```text
 Mammotion Cloud (I/O)            Anmeldung, Token, alle HTTP-Anfragen
 ├── Mammotion Konfigurator       listet die Mäher des Kontos und legt Instanzen an
-├── Mammotion Mäher "Horst"      Status, Werte, Steuerung, Dashboard
+├── Mähroboter                   Status, Werte, Steuerung, Kachel
 └── Mammotion Mäher "..."        weitere Mäher desselben Kontos
 ```
 
@@ -76,7 +76,7 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 - Systemzustand, Diagnose und Zeitstempel
 - Sperre gegen parallele Abrufe mit automatischer Freigabe
 - zwei Wiederholungen bei vorübergehenden Fehlern
-- Premium-Dashboard, in der Instanz aktivier- und deaktivierbar
+- eigene Kachel mit Live-Status und Bedienung, in der Instanz aktivier- und deaktivierbar
 - sauberer Start nach einem Neustart von IP-Symcon
 
 ## Voraussetzungen
@@ -199,7 +199,7 @@ Bereits angelegte Mäher sind mit ihrer Instanz verknüpft. Instanzen, deren Dev
 | Device ID | vom Konfigurator gesetzt; leer = erster Mäher des Kontos | leer |
 | Abfrageintervall | zyklische Aktualisierung, mindestens 30 Sekunden | 60 |
 | Instanz aktiv | für Wartung, Transport oder Einwinterung ausschalten | an |
-| Dashboard-Kachel (HTML) aktiv | legt die HTML-Variable an oder entfernt sie | an |
+| Kachel-Visualisierung (HTML) aktiv | zeigt die Instanz als eigene Kachel; aus = Standardkachel mit Variablenliste | an |
 | Schreibbefehle freigeben | erlaubt reale Steuerbefehle | aus |
 
 Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit Nickname, Modell und Device-ID, Systemzustand, Diagnose, letzte Aktualisierung, letzten Befehl und ob Schreibbefehle freigegeben sind.
@@ -208,7 +208,6 @@ Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit
 
 ```text
 Mammotion Mäher
-├── Dashboard
 ├── Online
 ├── Betriebsstatus
 ├── Status (Rohwert)
@@ -283,11 +282,34 @@ Schreibbefehle freigeben = Ja  (Mäher-Instanz)
 
 Das Ergebnis steht in **Letzter Befehl**. Fünf Sekunden nach einem Befehl wird der Status automatisch neu gelesen.
 
-## Dashboard
+## Kachel
 
-Die Variable **Dashboard** (Profil `~HTMLBox`) zeigt Nickname, Modell, Gerätebild, Betriebsstatus, Akku-Ring, Mähhöhe, WLAN-Qualität, Firmware und die letzte Aktualisierung. Die Darstellung passt sich an Desktop, Tablet und Smartphone an.
+Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit (HTML-SDK). Die Instanz einfach in die Visualisierung ziehen, eine zusätzliche Variable ist nicht nötig. Die Kachel aktualisiert sich live nach jedem Abruf und jedem Befehl.
 
-Der Name wird in dieser Reihenfolge bestimmt: Nickname aus der Mammotion-App, technischer Gerätename, Instanzname, `MAMMOTION`.
+**Inhalt:**
+
+- Nickname und Modell, Gerätebild aus der Mammotion-Cloud (sonst Mäher-Symbol)
+- Status-Badge, pulsierend beim Mähen, Laden und bei der Heimfahrt
+- Akku-Ring mit Farbwechsel (grün, gelb unter 40 %, rot unter 20 %)
+- Mähhöhe, WLAN und Mobilfunk mit Signalbalken und Qualitätsbewertung
+- Hinweiszeile bei Fehlern, Teilausfall, Offline oder unbekanntem Rohstatus
+- „Aktualisiert vor x Min.“ und letzter Befehl
+- animierte Mähbahnen im Hintergrund, solange der Mäher mäht
+
+**Bedienung** (nur mit **Schreibbefehle freigeben**, sonst Hinweis „Steuerung gesperrt“). Die Buttons passen sich dem Zustand an:
+
+| Zustand | Buttons |
+|---|---|
+| Bereit | Aufgabe wählen, Starten, Heim |
+| Lädt | Aufgabe wählen, Starten |
+| Mäht | Pause, Heim |
+| Pausiert | Weiter, Stop, Heim |
+| Heimfahrt | Heimfahrt abbrechen |
+| Offline, Fehler | keine |
+
+**Starten** und **Weiter** setzen den Mäher in Bewegung und müssen deshalb mit einem zweiten Tipp auf „Wirklich?“ bestätigt werden (4 Sekunden Zeit).
+
+**Größen:** Die Kachel passt sich an. Auf kleineren Kacheln werden nacheinander Kennzahlen, Fußzeile und Buttons ausgeblendet. Auf sehr kleinen Kacheln bleiben Name, Akku-Ring und Status.
 
 | Zustand | Farbe |
 |---|---|
@@ -299,7 +321,7 @@ Der Name wird in dieser Reihenfolge bestimmt: Nickname aus der Mammotion-App, te
 | API- oder Cloudfehler | Orange |
 | Offline, deaktiviert | Grau |
 
-Das Dashboard ist eine reine Anzeige. Gesteuert wird über die Variablen **Steuerung** und **Aufgabe starten**.
+Der Name in der Kachel wird so bestimmt: Nickname aus der Mammotion-App, technischer Gerätename, Instanzname.
 
 ## PHP-Funktionen
 
@@ -398,17 +420,17 @@ Mäher einschalten, WLAN oder Mobilfunk prüfen. Im Energiesparzustand meldet di
 
 In der Cloud-Instanz das Debug-Fenster öffnen. Es zeigt jede Anfrage und Antwort (ohne Token).
 
-## Umstieg von 1.x
+## Umstieg von früheren Versionen
 
-Version 2.0 verwendet neue Modul-GUIDs. Alte Instanzen werden nicht übernommen.
+Version 1.0 (Build 1) verwendet neue Modul-GUIDs. Alte Instanzen werden nicht übernommen.
 
 1. Client-ID, Client-Secret und Device-ID aus der alten Instanz notieren.
 2. Alte Mammotion-Instanz löschen.
-3. Optional die alten Profile `MAMMO.Tasks` und `MAMMO.Control` löschen. Sie werden bei Bedarf neu angelegt.
+3. Optional die alten Profile `MAMMO.Tasks`, `MAMMO.Control`, `MAMMO.OperationStatus` und `MAMMO.SystemState` löschen. Sie werden bei Bedarf neu angelegt.
 4. Modul in der Modulverwaltung aktualisieren oder neu hinzufügen.
 5. [Einrichtung](#einrichtung) durchführen.
 
-Skripte mit `MAMMO_Pause`, `MAMMO_StartTask` usw. funktionieren weiter, die Instanz-ID ändert sich jedoch. `MAMMO_StartCheck` und `MAMMO_RenewToken` entfallen. Stattdessen `MAMMO_RefreshWithResult` beziehungsweise `MAMCLOUD_RenewToken` verwenden.
+Skripte mit `MAMMO_Pause`, `MAMMO_StartTask` usw. funktionieren weiter, die Instanz-ID ändert sich jedoch. `MAMMO_StartCheck` und `MAMMO_RenewToken` entfallen, ebenso die Variable **Dashboard** (ersetzt durch die Kachel). Stattdessen `MAMMO_RefreshWithResult` beziehungsweise `MAMCLOUD_RenewToken` verwenden.
 
 ## Bekannte Einschränkungen
 

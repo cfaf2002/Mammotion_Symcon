@@ -10,8 +10,8 @@ declare(strict_types=1);
  */
 class MammotionMower extends IPSModule
 {
-    private const MODULE_VERSION = '2.1';
-    private const MODULE_BUILD = 2;
+    private const MODULE_VERSION = '1.0';
+    private const MODULE_BUILD = 1;
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
 
@@ -75,7 +75,7 @@ class MammotionMower extends IPSModule
         $this->RegisterPropertyInteger('PollInterval', 60);
         $this->RegisterPropertyBoolean('Active', true);
         $this->RegisterPropertyBoolean('EnableControl', false);
-        $this->RegisterPropertyBoolean('ShowDashboard', true);
+        $this->RegisterPropertyBoolean('EnableTile', true);
 
         $this->RegisterAttributeString('ResolvedDeviceID', '');
         $this->RegisterAttributeString('DeviceNickname', '');
@@ -107,6 +107,7 @@ class MammotionMower extends IPSModule
 
         $this->EnsureProfiles();
         $this->MaintainVariables();
+        $this->SetVisualizationType($this->ReadPropertyBoolean('EnableTile') ? 1 : 0);
         $this->ReleaseRefreshLock();
         $this->ResetRetry();
 
@@ -296,7 +297,7 @@ class MammotionMower extends IPSModule
             $this->SetValue('SystemState', self::SYS_DISABLED);
             $this->SetValue('Diagnostic', 'Instanz ist deaktiviert');
             $this->SetStatus(self::STATUS_INACTIVE);
-            $this->UpdateDashboard();
+            $this->UpdateTile();
             return;
         }
 
@@ -305,7 +306,7 @@ class MammotionMower extends IPSModule
             $this->SetValue('SystemState', self::SYS_ERROR);
             $this->SetValue('Diagnostic', 'Abfrageintervall muss mindestens ' . self::MIN_INTERVAL . ' Sekunden betragen');
             $this->SetStatus(self::STATUS_CONFIG);
-            $this->UpdateDashboard();
+            $this->UpdateTile();
             return;
         }
 
@@ -313,7 +314,7 @@ class MammotionMower extends IPSModule
         $this->SetStatus(self::STATUS_ACTIVE);
         $this->SetTimerInterval('UpdateTimer', $this->ReadPropertyInteger('PollInterval') * 1000);
         $this->SetTimerInterval('DelayedRefreshTimer', 2000);
-        $this->UpdateDashboard();
+        $this->UpdateTile();
     }
 
     // ------------------------------------------------------------------
@@ -329,7 +330,7 @@ class MammotionMower extends IPSModule
             $this->SetValue('SystemState', self::SYS_ERROR);
             $this->SetValue('Diagnostic', 'Cloud-Instanz ist nicht verbunden oder nicht aktiv');
             $this->SetStatus(self::STATUS_NO_CLOUD);
-            $this->UpdateDashboard();
+            $this->UpdateTile();
             return false;
         }
         if (!$this->AcquireRefreshLock()) {
@@ -398,7 +399,7 @@ class MammotionMower extends IPSModule
             return false;
         } finally {
             $this->ReleaseRefreshLock();
-            $this->UpdateDashboard();
+            $this->UpdateTile();
         }
     }
 
@@ -534,10 +535,12 @@ class MammotionMower extends IPSModule
             $response = $this->Api('POST', '/v1/mower/action', $payload);
         } catch (Throwable $e) {
             $this->SetValue('LastCommand', $action . ' fehlgeschlagen (' . date('H:i:s') . '): ' . $e->getMessage());
+            $this->UpdateTile();
             throw $e;
         }
         $ok = (bool) ($response['data']['commandResult'] ?? true);
         $this->SetValue('LastCommand', $action . ($ok ? ' gesendet' : ' abgelehnt') . ' (' . date('d.m.Y H:i:s') . ')');
+        $this->UpdateTile();
         // Status kurz nach dem Befehl neu einlesen
         $this->SetTimerInterval('DelayedRefreshTimer', self::COMMAND_REFRESH_DELAY * 1000);
         return $ok;
@@ -639,7 +642,8 @@ class MammotionMower extends IPSModule
     private function MaintainVariables(): void
     {
         $vars = [
-            ['Dashboard', 'Dashboard', VARIABLETYPE_STRING, '~HTMLBox', 5, $this->ReadPropertyBoolean('ShowDashboard')],
+            // Frühere HTMLBox-Variable entfernen, die Darstellung übernimmt die Kachel der Instanz
+            ['Dashboard', 'Dashboard', VARIABLETYPE_STRING, '~HTMLBox', 5, false],
             ['Online', 'Online', VARIABLETYPE_BOOLEAN, self::PROFILE_ONLINE, 10, true],
             ['OperationStatus', 'Betriebsstatus', VARIABLETYPE_INTEGER, self::PROFILE_OPERATION, 20, true],
             ['Status', 'Status (Rohwert)', VARIABLETYPE_STRING, '', 21, true],
@@ -716,116 +720,55 @@ class MammotionMower extends IPSModule
     }
 
     // ------------------------------------------------------------------
-    // Dashboard
+    // Kachel-Visualisierung (HTML-SDK)
     // ------------------------------------------------------------------
 
-    private function UpdateDashboard(): void
+    public function GetVisualizationTile(): string
     {
-        if (!$this->ReadPropertyBoolean('ShowDashboard')) {
-            return;
-        }
-        $this->SetValue('Dashboard', $this->BuildDashboard());
+        $html = (string) file_get_contents(__DIR__ . '/module.html');
+        $state = (string) json_encode($this->BuildTileState(), JSON_UNESCAPED_UNICODE);
+        return $html . '<script>handleMessage(' . json_encode($state, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) . ');</script>';
     }
 
-    private function BuildDashboard(): string
+    private function UpdateTile(): void
+    {
+        if (!$this->ReadPropertyBoolean('EnableTile')) {
+            return;
+        }
+        $this->UpdateVisualizationValue((string) json_encode($this->BuildTileState(), JSON_UNESCAPED_UNICODE));
+    }
+
+    private function BuildTileState(): array
     {
         $nickname = $this->ReadAttributeString('DeviceNickname');
         $apiName = $this->ReadAttributeString('DeviceApiName');
-        $model = $this->ReadAttributeString('DeviceModel');
-        $iconUrl = $this->ReadAttributeString('DeviceIconURL');
-        $instanceName = IPS_GetName($this->InstanceID);
-        $title = $nickname !== '' ? $nickname : ($apiName !== '' ? $apiName : ($instanceName !== '' ? $instanceName : 'MAMMOTION'));
+        $title = $nickname !== '' ? $nickname : ($apiName !== '' ? $apiName : IPS_GetName($this->InstanceID));
 
-        $active = $this->ReadPropertyBoolean('Active');
-        $online = (bool) $this->GetValue('Online');
-        $operation = (int) $this->GetValue('OperationStatus');
-        $system = (int) $this->GetValue('SystemState');
-        $battery = max(0, min(100, (int) $this->GetValue('Battery')));
-        $knifeHeight = (int) $this->GetValue('KnifeHeight');
-        $wifi = (int) $this->GetValue('WifiRSSI');
-        $firmware = trim((string) $this->GetValue('Firmware'));
-        $lastSuccess = (int) $this->GetValue('LastSuccess');
-
-        $states = [
-            self::OP_OFFLINE      => ['Offline', '#64748b', 'OFFLINE'],
-            self::OP_READY        => ['Bereit', '#22c55e', 'BEREIT'],
-            self::OP_MOWING       => ['Mäht', '#10b981', 'AKTIV'],
-            self::OP_PAUSED       => ['Pausiert', '#f59e0b', 'PAUSE'],
-            self::OP_CHARGING     => ['Lädt', '#3b82f6', 'LADEN'],
-            self::OP_RETURNING    => ['Heimfahrt', '#8b5cf6', 'HEIMFAHRT'],
-            self::OP_DEVICE_ERROR => ['Gerätefehler', '#ef4444', 'FEHLER'],
-            self::OP_CLOUD_ERROR  => ['API/Cloud-Fehler', '#f97316', 'API-FEHLER'],
-            self::OP_UNKNOWN      => ['Unbekannt', '#94a3b8', 'UNBEKANNT']
-        ];
-        [$status, $accent, $badge] = $states[$operation] ?? $states[self::OP_UNKNOWN];
-
-        if (!$active || $system === self::SYS_DISABLED) {
-            [$status, $accent, $badge] = ['Instanz deaktiviert', '#64748b', 'DEAKTIVIERT'];
-        } elseif ($system === self::SYS_INIT && $lastSuccess === 0) {
-            [$status, $accent, $badge] = ['Wird initialisiert', '#94a3b8', 'START'];
-        } elseif ($system === self::SYS_ERROR && $operation !== self::OP_CLOUD_ERROR) {
-            [$status, $accent, $badge] = ['Systemfehler', '#ef4444', 'FEHLER'];
-        } elseif (!$online && $operation !== self::OP_CLOUD_ERROR) {
-            [$status, $accent, $badge] = ['Offline', '#64748b', 'OFFLINE'];
-        } elseif ($system === self::SYS_PARTIAL) {
-            $badge = 'TEILWEISE';
+        $tasks = [];
+        foreach (json_decode($this->ReadAttributeString('TaskMap'), true) ?: [] as $value => $task) {
+            $tasks[] = ['value' => (int) $value, 'name' => (string) $task['name']];
         }
 
-        $batteryColor = $battery < 20 ? '#ef4444' : ($battery < 40 ? '#f59e0b' : '#22c55e');
-        $batteryText = $battery >= 70 ? 'Sehr gut' : ($battery >= 40 ? 'Gut' : ($battery >= 20 ? 'Niedrig' : 'Kritisch'));
-        $wifiValue = $wifi === 0 ? 'Keine Daten' : $wifi . ' dBm';
-        $wifiQuality = $wifi === 0 ? 'Unbekannt' : ($wifi >= -55 ? 'Sehr gut' : ($wifi >= -67 ? 'Gut' : ($wifi >= -75 ? 'Mittel' : 'Schwach')));
-        $update = $lastSuccess > 0 ? date('d.m.Y · H:i', $lastSuccess) : 'Noch keine Aktualisierung';
-        $model = $model !== '' ? $model : 'Mammotion Mäher';
-        $firmware = $firmware !== '' ? $firmware : 'Unbekannt';
-        $knife = $knifeHeight > 0 ? $knifeHeight . ' mm' : '–';
-
-        $e = function (string $v): string {
-            return htmlspecialchars($v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        };
-        $visual = $iconUrl !== ''
-            ? '<img class="mower-img" src="' . $e($iconUrl) . '" alt="">'
-            : '<div class="mower-fallback">M</div>';
-
-        $css = '.mcard{box-sizing:border-box;width:100%;min-height:330px;padding:22px;border-radius:26px;color:#f8fafc;'
-            . 'background:radial-gradient(circle at 88% 5%,color-mix(in srgb,var(--a) 22%,transparent),transparent 34%),linear-gradient(145deg,#182235 0%,#0c1423 62%,#060a12 100%);'
-            . 'font-family:Inter,Segoe UI,Arial,sans-serif;box-shadow:0 20px 55px rgba(2,6,23,.44);overflow:hidden}'
-            . '.mcard *{box-sizing:border-box}.top{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}'
-            . '.identity{display:flex;gap:14px;align-items:center;min-width:0}'
-            . '.device-visual{width:76px;height:76px;display:grid;place-items:center;border-radius:21px;background:linear-gradient(145deg,rgba(255,255,255,.11),rgba(255,255,255,.025));border:1px solid rgba(255,255,255,.11);overflow:hidden;flex:0 0 auto}'
-            . '.mower-img{display:block;width:100%;height:100%;object-fit:contain;padding:6px;filter:drop-shadow(0 8px 12px rgba(0,0,0,.32))}'
-            . '.mower-fallback{font-size:34px;font-weight:900;color:var(--a)}'
-            . '.name{font-size:25px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.model{margin-top:5px;color:#94a3b8;font-size:12px}'
-            . '.status-dot{display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;background:var(--a);box-shadow:0 0 12px var(--a)}'
-            . '.badge{padding:7px 10px;border-radius:999px;background:color-mix(in srgb,var(--a) 18%,transparent);border:1px solid color-mix(in srgb,var(--a) 58%,transparent);color:var(--a);font-size:10px;font-weight:850;letter-spacing:.1em;white-space:nowrap}'
-            . '.hero{display:grid;grid-template-columns:125px 1fr;gap:22px;align-items:center;margin-top:22px}'
-            . '.ring{width:122px;height:122px;display:grid;place-items:center;border-radius:50%;position:relative;background:conic-gradient(var(--b) var(--p),rgba(148,163,184,.14) 0)}'
-            . '.ring:before{content:"";position:absolute;inset:10px;border-radius:50%;background:#0d1625;box-shadow:inset 0 0 24px rgba(0,0,0,.38)}'
-            . '.ring-in{position:relative;text-align:center}.pct{font-size:31px;font-weight:900}'
-            . '.small{color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.15em}'
-            . '.state{font-size:27px;font-weight:850;line-height:1.1}'
-            . '.line{width:52px;height:4px;margin:12px 0 0;border-radius:4px;background:var(--a);box-shadow:0 0 18px color-mix(in srgb,var(--a) 70%,transparent)}'
-            . '.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:20px}'
-            . '.metric{padding:13px 14px;border-radius:16px;background:rgba(15,23,42,.64);border:1px solid rgba(148,163,184,.12)}'
-            . '.mn{color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.12em}.mv{margin-top:6px;font-size:15px;font-weight:780}'
-            . '.hint{margin-top:3px;color:#64748b;font-size:10px}'
-            . '.foot{display:flex;justify-content:space-between;gap:12px;margin-top:16px;padding-top:14px;border-top:1px solid rgba(148,163,184,.12);color:#64748b;font-size:10px}'
-            . '@media(max-width:520px){.mcard{padding:16px}.device-visual{width:60px;height:60px}.name{font-size:20px}.hero{grid-template-columns:95px 1fr;gap:15px}'
-            . '.ring{width:94px;height:94px}.pct{font-size:24px}.state{font-size:22px}.metrics{grid-template-columns:1fr 1fr}.metric:last-child{grid-column:1/-1}.foot{flex-direction:column}}';
-
-        return '<div class="mcard" style="--a:' . $accent . ';--b:' . $batteryColor . ';--p:' . $battery . '%">'
-            . '<style>' . $css . '</style>'
-            . '<div class="top"><div class="identity"><div class="device-visual">' . $visual . '</div>'
-            . '<div><div class="name">' . $e($title) . '</div><div class="model">' . $e($model) . '</div></div></div>'
-            . '<div class="badge"><span class="status-dot"></span>' . $e($badge) . '</div></div>'
-            . '<div class="hero"><div class="ring"><div class="ring-in"><div class="pct">' . $battery . '%</div>'
-            . '<div class="small">Akku · ' . $batteryText . '</div></div></div>'
-            . '<div><div class="state">' . $e($status) . '</div><div class="line"></div></div></div>'
-            . '<div class="metrics">'
-            . '<div class="metric"><div class="mn">Mähhöhe</div><div class="mv">' . $e($knife) . '</div></div>'
-            . '<div class="metric"><div class="mn">WLAN</div><div class="mv">' . $e($wifiValue) . '</div><div class="hint">' . $e($wifiQuality) . '</div></div>'
-            . '<div class="metric"><div class="mn">Firmware</div><div class="mv">' . $e($firmware) . '</div></div>'
-            . '</div>'
-            . '<div class="foot"><span>Aktualisiert: ' . $e($update) . '</span><span>v' . self::MODULE_VERSION . '</span></div></div>';
+        return [
+            'title'       => $title,
+            'model'       => $this->ReadAttributeString('DeviceModel'),
+            'image'       => $this->ReadAttributeString('DeviceIconURL'),
+            'active'      => $this->ReadPropertyBoolean('Active'),
+            'control'     => $this->ReadPropertyBoolean('EnableControl'),
+            'online'      => (bool) $this->GetValue('Online'),
+            'op'          => (int) $this->GetValue('OperationStatus'),
+            'raw'         => (string) $this->GetValue('Status'),
+            'system'      => (int) $this->GetValue('SystemState'),
+            'battery'     => (int) $this->GetValue('Battery'),
+            'knife'       => (int) $this->GetValue('KnifeHeight'),
+            'wifi'        => (int) $this->GetValue('WifiRSSI'),
+            'cell'        => (int) $this->GetValue('CellularRSSI'),
+            'firmware'    => (string) $this->GetValue('Firmware'),
+            'lastSuccess' => (int) $this->GetValue('LastSuccess'),
+            'lastCommand' => (string) $this->GetValue('LastCommand'),
+            'diagnostic'  => (string) $this->GetValue('Diagnostic'),
+            'tasks'       => $tasks,
+            'version'     => self::MODULE_VERSION
+        ];
     }
 }

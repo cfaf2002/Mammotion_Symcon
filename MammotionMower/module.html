@@ -1,0 +1,336 @@
+<style>
+  :root {
+    --a: #22c55e;
+    --b: #22c55e;
+    --bg1: #16213a;
+    --bg2: #0a1120;
+    --txt: #f1f5f9;
+    --mut: #94a3b8;
+    --dim: #64748b;
+    --line: rgba(148, 163, 184, .14);
+  }
+  html, body { margin: 0; padding: 0; height: 100%; background: transparent; }
+  * { box-sizing: border-box; }
+  .tile {
+    position: relative; height: 100%; width: 100%; overflow: hidden;
+    container-type: size; container-name: tile;
+    display: flex; flex-direction: column; gap: 12px;
+    padding: 16px; border-radius: 22px; color: var(--txt);
+    font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+    background:
+      radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--a) 26%, transparent), transparent 60%),
+      linear-gradient(160deg, var(--bg1), var(--bg2));
+    transition: background .6s;
+  }
+  /* Mähbahnen im Hintergrund, laufen beim Mähen */
+  .grass {
+    position: absolute; inset: -40%; pointer-events: none; opacity: 0; transition: opacity .8s;
+    background: repeating-linear-gradient(115deg,
+      color-mix(in srgb, var(--a) 9%, transparent) 0 28px,
+      transparent 28px 56px);
+  }
+  .tile.mowing .grass { opacity: 1; animation: mow 9s linear infinite; }
+  @keyframes mow { from { transform: translateX(0); } to { transform: translateX(122px); } }
+  .tile > *:not(.grass) { position: relative; }
+
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .img {
+    flex: 0 0 auto; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+    background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.03));
+    border: 1px solid rgba(255,255,255,.1); overflow: hidden;
+  }
+  .img img { width: 100%; height: 100%; object-fit: contain; padding: 4px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.35)); }
+  .img svg { width: 30px; height: 30px; color: var(--a); }
+  .name { font-size: 20px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }
+  .model { margin-top: 2px; font-size: 12px; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px;
+    font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--a);
+    background: color-mix(in srgb, var(--a) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--a) 50%, transparent);
+  }
+  .badge i { width: 7px; height: 7px; border-radius: 50%; background: var(--a); box-shadow: 0 0 10px var(--a); }
+  .tile.live .badge i { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+
+  .hero { display: flex; align-items: center; gap: 18px; flex: 1 1 auto; min-height: 0; }
+  .ring { position: relative; flex: 0 0 auto; width: 112px; height: 112px; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 10; }
+  .ring .track { stroke: rgba(148, 163, 184, .15); }
+  .ring .bar {
+    stroke: var(--b); stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7;
+    transition: stroke-dashoffset 1s ease, stroke .6s; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--b) 60%, transparent));
+  }
+  .pct { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .pct b { font-size: 28px; font-weight: 900; line-height: 1; }
+  .pct small { margin-top: 4px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+  .tile.dim .ring { opacity: .45; }
+  .state { min-width: 0; }
+  .st { font-size: 24px; font-weight: 850; line-height: 1.1; }
+  .bar2 { width: 44px; height: 4px; margin: 10px 0 8px; border-radius: 4px; background: var(--a); box-shadow: 0 0 14px var(--a); }
+  .sub { font-size: 12px; color: var(--mut); line-height: 1.35; }
+  .sub.warn { color: #fbbf24; }
+
+  .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .chip { padding: 9px 10px; border-radius: 14px; background: rgba(15, 23, 42, .55); border: 1px solid var(--line); min-width: 0; }
+  .chip > span { display: block; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+  .chip > b { display: flex; align-items: center; margin-top: 4px; font-size: 14px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip em { display: block; margin-top: 1px; font-size: 10px; font-style: normal; color: var(--dim); }
+  .sig { display: inline-flex; gap: 2px; align-items: flex-end; height: 11px; margin-right: 6px; flex: 0 0 auto; }
+  .sig i { width: 3px; border-radius: 1px; background: rgba(148, 163, 184, .3); }
+  .sig i:nth-child(1) { height: 4px; } .sig i:nth-child(2) { height: 7px; } .sig i:nth-child(3) { height: 9px; } .sig i:nth-child(4) { height: 11px; }
+  .sig i.on { background: var(--txt); }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .actions:empty { display: none; }
+  .btn, .sel {
+    flex: 1 1 0; min-width: 0; height: 38px; padding: 0 12px; border-radius: 12px; font: inherit; font-size: 13px; font-weight: 700;
+    color: var(--txt); background: rgba(148, 163, 184, .12); border: 1px solid var(--line); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+    transition: background .2s, border-color .2s, transform .1s;
+  }
+  .btn:hover { background: rgba(148, 163, 184, .2); }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: color-mix(in srgb, var(--a) 28%, transparent); border-color: color-mix(in srgb, var(--a) 60%, transparent); }
+  .btn.confirm { background: #f59e0b; border-color: #f59e0b; color: #111827; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn svg { width: 15px; height: 15px; flex: 0 0 auto; }
+  .sel { flex: 2 1 0; appearance: none; text-align: left; justify-content: flex-start; padding-right: 28px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--mut) 50%), linear-gradient(135deg, var(--mut) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 16px, calc(100% - 11px) 16px; background-size: 5px 5px; background-repeat: no-repeat; }
+  .sel option { color: #0f172a; }
+  .lock { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .lock svg { width: 14px; height: 14px; }
+
+  footer { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 10px; }
+  footer span:last-child { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Kleinere Kacheln: Inhalte schrittweise ausblenden */
+  @container tile (max-height: 380px) { .chips { display: none; } }
+  @container tile (max-height: 300px) { footer { display: none; } .model { display: none; } }
+  @container tile (max-height: 230px) { .actions { display: none; } .sub { display: none; } }
+  @container tile (max-width: 330px) {
+    .tile { padding: 12px; }
+    .ring { width: 84px; height: 84px; } .pct b { font-size: 21px; }
+    .st { font-size: 18px; } .name { font-size: 16px; } .img { width: 40px; height: 40px; border-radius: 12px; }
+    .badge span { display: none; } .badge { padding: 6px; }
+    .chips { grid-template-columns: 1fr 1fr; } .chip:last-child { display: none; }
+  }
+  @container tile (max-width: 220px) {
+    .hero { flex-direction: column; align-items: flex-start; gap: 8px; } .img { display: none; }
+  }
+</style>
+
+<div class="tile" id="tile">
+  <div class="grass"></div>
+  <header>
+    <div class="id">
+      <div class="img" id="img"></div>
+      <div style="min-width:0">
+        <div class="name" id="name">Mähroboter</div>
+        <div class="model" id="model"></div>
+      </div>
+    </div>
+    <div class="badge"><i></i><span id="badge">–</span></div>
+  </header>
+
+  <section class="hero">
+    <div class="ring">
+      <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52"></circle><circle class="bar" id="bar" cx="60" cy="60" r="52"></circle></svg>
+      <div class="pct"><b id="pct">–</b><small id="batt">Akku</small></div>
+    </div>
+    <div class="state">
+      <div class="st" id="state">–</div>
+      <div class="bar2"></div>
+      <div class="sub" id="sub"></div>
+    </div>
+  </section>
+
+  <div class="chips">
+    <div class="chip"><span>Mähhöhe</span><b id="knife">–</b><em>&nbsp;</em></div>
+    <div class="chip"><span>WLAN</span><b><span class="sig" id="wsig"><i></i><i></i><i></i><i></i></span><span id="wifi">–</span></b><em id="wifiq">&nbsp;</em></div>
+    <div class="chip"><span>Mobilfunk</span><b><span class="sig" id="csig"><i></i><i></i><i></i><i></i></span><span id="cell">–</span></b><em id="cellq">&nbsp;</em></div>
+  </div>
+
+  <div class="actions" id="actions"></div>
+
+  <footer><span id="upd">Noch keine Aktualisierung</span><span id="msg"></span></footer>
+</div>
+
+<script>
+  (function () {
+    var S = null;          // letzter Zustand vom Modul
+    var confirmKey = null; // Button, der gerade eine Bestätigung erwartet
+    var confirmTimer = null;
+    var selectedTask = null;
+
+    var ICON = {
+      mower: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5c0-4.4 4-7.5 9-7.5s9 3.1 9 7.5z" fill="currentColor" fill-opacity=".18"/><path d="M9 9.4 10.5 6h3L15 9.4"/><circle cx="7" cy="18" r="2" fill="currentColor"/><circle cx="17" cy="18" r="2" fill="currentColor"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+      stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+      home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
+      cancel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+      lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+    };
+
+    // Betriebsstatus: 0 Offline, 1 Bereit, 2 Mäht, 3 Pausiert, 4 Lädt, 5 Heimfahrt, 6 Gerätefehler, 7 API/Cloud-Fehler, 8 Unbekannt
+    var OP = {
+      0: ['Offline', '#64748b', 'OFFLINE'], 1: ['Bereit', '#22c55e', 'BEREIT'], 2: ['Mäht', '#10b981', 'MÄHT'],
+      3: ['Pausiert', '#f59e0b', 'PAUSE'], 4: ['Lädt', '#3b82f6', 'LADEN'], 5: ['Heimfahrt', '#8b5cf6', 'HEIMFAHRT'],
+      6: ['Gerätefehler', '#ef4444', 'FEHLER'], 7: ['Cloud-Fehler', '#f97316', 'CLOUD'], 8: ['Unbekannt', '#94a3b8', 'STATUS ?']
+    };
+
+    function $(id) { return document.getElementById(id); }
+    function txt(id, v) { $(id).textContent = v; }
+
+    function signal(id, dbm) {
+      var bars = dbm === 0 ? 0 : dbm >= -55 ? 4 : dbm >= -67 ? 3 : dbm >= -75 ? 2 : 1;
+      var items = $(id).children;
+      for (var i = 0; i < items.length; i++) items[i].className = i < bars ? 'on' : '';
+      return ['Keine Daten', 'Schwach', 'Mittel', 'Gut', 'Sehr gut'][bars];
+    }
+
+    function ago(ts) {
+      if (!ts) return 'Noch keine Aktualisierung';
+      var d = new Date(ts * 1000), now = new Date(), diff = Math.round((now - d) / 60000);
+      if (diff < 1) return 'Aktualisiert gerade eben';
+      if (diff < 60) return 'Aktualisiert vor ' + diff + ' Min.';
+      var same = d.toDateString() === now.toDateString();
+      return 'Aktualisiert ' + (same ? '' : d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ') +
+        d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function button(key, label, icon, cls, action, needsConfirm) {
+      var b = document.createElement('button');
+      b.className = 'btn ' + (cls || '');
+      b.innerHTML = (icon ? ICON[icon] : '') + '<span></span>';
+      b.lastChild.textContent = label;
+      if (confirmKey === key) { b.className = 'btn confirm'; b.lastChild.textContent = 'Wirklich?'; }
+      b.onclick = function () {
+        if (needsConfirm && confirmKey !== key) {
+          confirmKey = key; clearTimeout(confirmTimer);
+          confirmTimer = setTimeout(function () { confirmKey = null; render(); }, 4000);
+          render(); return;
+        }
+        confirmKey = null; clearTimeout(confirmTimer);
+        action(); render();
+        txt('msg', 'Befehl gesendet …');
+      };
+      return b;
+    }
+
+    function control(value) { requestAction('Control', value); }
+
+    function renderActions() {
+      var box = $('actions');
+      box.innerHTML = '';
+      if (!S || !S.active || !S.online || S.system === 5 && S.op !== 7) return;
+
+      if (!S.control) {
+        var l = document.createElement('div');
+        l.className = 'lock';
+        l.innerHTML = ICON.lock + '<span>Steuerung gesperrt – in der Instanz freigeben</span>';
+        box.appendChild(l);
+        return;
+      }
+
+      var op = S.op;
+      if (op === 1 || op === 4 || op === 8) {
+        if (S.tasks.length > 0) {
+          var sel = document.createElement('select');
+          sel.className = 'sel';
+          S.tasks.forEach(function (t) {
+            var o = document.createElement('option');
+            o.value = t.value; o.textContent = t.name;
+            if (String(t.value) === String(selectedTask)) o.selected = true;
+            sel.appendChild(o);
+          });
+          selectedTask = sel.value;
+          sel.onchange = function () { selectedTask = sel.value; confirmKey = null; render(); };
+          box.appendChild(sel);
+          box.appendChild(button('start', 'Starten', 'play', 'primary', function () { requestAction('Task', parseInt(selectedTask, 10)); }, true));
+        }
+        if (op !== 4) box.appendChild(button('home', 'Heim', 'home', '', function () { control(4); }));
+      } else if (op === 2) {
+        box.appendChild(button('pause', 'Pause', 'pause', 'primary', function () { control(1); }));
+        box.appendChild(button('home', 'Heim', 'home', '', function () { control(4); }));
+      } else if (op === 3) {
+        box.appendChild(button('resume', 'Weiter', 'play', 'primary', function () { control(2); }, true));
+        box.appendChild(button('stop', 'Stop', 'stop', '', function () { control(3); }));
+        box.appendChild(button('home', 'Heim', 'home', '', function () { control(4); }));
+      } else if (op === 5) {
+        box.appendChild(button('cancel', 'Heimfahrt abbrechen', 'cancel', '', function () { control(5); }));
+      }
+    }
+
+    function render() {
+      if (!S) return;
+      var tile = $('tile');
+      var info = OP[S.op] || OP[8];
+      var label = info[0], color = info[1], badge = info[2], sub = '';
+
+      if (!S.active) { label = 'Deaktiviert'; color = '#64748b'; badge = 'AUS'; sub = 'Instanz ist ausgeschaltet'; }
+      else if (S.system === 0 && !S.lastSuccess) { label = 'Startet …'; color = '#94a3b8'; badge = 'START'; }
+      else if (S.system === 5 && S.op !== 7) { label = 'Fehler'; color = '#ef4444'; badge = 'FEHLER'; sub = S.diagnostic; }
+      else if (!S.online && S.op !== 7) { label = 'Offline'; color = '#64748b'; badge = 'OFFLINE'; sub = 'Mäher schläft oder ist nicht erreichbar'; }
+      else if (S.op === 7) { sub = S.diagnostic; }
+      else if (S.system === 3) { sub = 'Teilweise verfügbar – ' + S.diagnostic; }
+      else if (S.op === 8 && S.raw) { sub = 'Rohstatus: ' + S.raw; }
+      else if (S.op === 2 && S.task) { sub = 'Aufgabe: ' + S.task; }
+      else if (S.op === 4) { sub = 'In der Ladestation'; }
+
+      tile.style.setProperty('--a', color);
+      var batt = Math.max(0, Math.min(100, S.battery | 0));
+      var bcol = batt < 20 ? '#ef4444' : batt < 40 ? '#f59e0b' : '#22c55e';
+      tile.style.setProperty('--b', bcol);
+      tile.classList.toggle('dim', !S.active || !S.online);
+      tile.classList.toggle('mowing', S.active && S.online && S.op === 2);
+      tile.classList.toggle('live', S.active && S.online && (S.op === 2 || S.op === 5 || S.op === 4));
+
+      txt('name', S.title || 'Mähroboter');
+      txt('model', S.model || 'Mammotion');
+      var img = $('img');
+      if (S.image) {
+        if (!img.firstChild || img.firstChild.tagName !== 'IMG' || img.firstChild.getAttribute('src') !== S.image) {
+          img.innerHTML = '';
+          var im = document.createElement('img');
+          im.alt = ''; im.src = S.image;
+          im.onerror = function () { img.innerHTML = ICON.mower; };
+          img.appendChild(im);
+        }
+      } else { img.innerHTML = ICON.mower; }
+
+      txt('badge', badge);
+      txt('state', label);
+      var s = $('sub');
+      s.textContent = sub || '';
+      s.className = 'sub' + ((S.system === 3 || S.system === 5 || S.op === 7) ? ' warn' : '');
+
+      $('bar').style.strokeDashoffset = String(326.7 * (1 - batt / 100));
+      txt('pct', S.lastSuccess ? batt + '%' : '–');
+      txt('batt', batt >= 70 ? 'Gut' : batt >= 40 ? 'Ok' : batt >= 20 ? 'Niedrig' : 'Kritisch');
+
+      txt('knife', S.knife > 0 ? S.knife + ' mm' : '–');
+      txt('wifi', S.wifi ? S.wifi + ' dBm' : '–');
+      txt('wifiq', signal('wsig', S.wifi));
+      txt('cell', S.cell ? S.cell + ' dBm' : '–');
+      txt('cellq', signal('csig', S.cell));
+
+      txt('upd', ago(S.lastSuccess));
+      if ($('msg').textContent !== 'Befehl gesendet …') txt('msg', S.lastCommand || ('v' + S.version));
+      renderActions();
+    }
+
+    window.handleMessage = function (data) {
+      try { S = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
+      if (!S.tasks) S.tasks = [];
+      $('msg').textContent = '';
+      render();
+    };
+
+    setInterval(function () { if (S) txt('upd', ago(S.lastSuccess)); }, 30000);
+  })();
+</script>

@@ -32,8 +32,8 @@
         },
         {
           "type": "CheckBox",
-          "name": "ShowDashboard",
-          "caption": "Dashboard-Kachel (HTML) aktiv"
+          "name": "EnableTile",
+          "caption": "Kachel-Visualisierung (HTML) aktiv"
         }
       ]
     },
