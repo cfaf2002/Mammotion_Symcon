@@ -458,7 +458,8 @@ class MammotionCloud extends IPSModule
         // Ab hier war die Kommunikation mit der Cloud erfolgreich
         $this->RegisterSuccess();
 
-        if ($code !== 0) {
+        // Die Spezifikation nennt 200 als Erfolgscode, die Live-API liefert 0: beides akzeptieren
+        if ($code !== 0 && $code !== 200) {
             $message = 'Mammotion-API (Code ' . var_export($code, true) . '): ' . $this->SafeApiMessage($json);
             $kind = $this->IsOfflineMessage($message) ? MammotionCloudException::OFFLINE : MammotionCloudException::API;
             throw new MammotionCloudException($message, $kind);

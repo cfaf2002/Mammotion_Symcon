@@ -17,7 +17,17 @@ Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen frühe
 - Nutzungshinweis in der Cloud-Instanz; ohne Bestätigung werden keine Anfragen gesendet
 - Schalter **Instanz aktiv** und Status-Block in Cloud- und Mäher-Instanz
 - eigene Kachel für die Kachel-Visualisierung (HTML-SDK) mit Live-Updates, zustandsabhängigen Buttons, Bestätigung vor Start und Weiterfahrt, Akku-Ring, Signalbalken und Mähanimation; zeigt Modell statt App-Nickname, lässt Platz für Instanzname und Vergrößern-Symbol, passt sich an die Kachelgröße an; in der Instanz abschaltbar
-- Arbeitsparameter und Aufgaben werden nur alle 15 Minuten abgefragt (nach Fehler nach 5 Minuten, bei manuellem Abruf sofort)
+- Statistik (`work-reports/summary`): Einsätze, gemähte Fläche, Zeitersparnis, CO₂-Einsparung
+- letzter Einsatz (`work-reports/search` und Detail): Zeitpunkt, Ergebnis, Art, Fläche, Dauer, Fortschritt, Energie, Mähhöhe und Geschwindigkeit
+- Fehlerprotokoll (`error-codes/search`): letzter Gerätefehler mit Code und Beschreibung, Anzahl der letzten 30 Tage; frische Fehler (24 h) erscheinen in der Kachel
+- Schalter „Statistik, Einsatzverlauf und Fehlerprotokoll abrufen“
+- Aufgaben, Statistik, Verlauf und Fehler werden alle 15 Minuten abgefragt (nach Fehler nach 5 Minuten, 2 Minuten nach Einsatzende, bei manuellem Abruf sofort)
+- Betriebsstatus „In der Station“ bei Standby mit Ladestatus ungleich 0
+- Cloud akzeptiert API-Code 0 und 200 als Erfolg
+
+### Sicherheit
+
+- `GET /v1/mower/{deviceId}/work-params` wird nicht mehr aufgerufen. Laut der Home-Assistant-Integration hat ein LUBA 2 nach diesem Aufruf unerwartet zu mähen begonnen. Mähhöhe und Geschwindigkeit kommen jetzt aus dem Bericht des letzten Einsatzes.
 - mehrere Mäher und mehrere Mammotion-Konten
 - ein gemeinsamer Token je Konto, Token-Abruf per Semaphore abgesichert
 - Fehlerarten (vorübergehend, Anmeldung, API, offline) werden von der Cloud an die Mäher weitergegeben

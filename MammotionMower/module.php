@@ -21,14 +21,23 @@ class MammotionMower extends IPSModule
     private const PROFILE_CONTROL = 'MAMMO.Control';
     private const PROFILE_MM = 'MAMMO.Millimeter';
     private const PROFILE_DBM = 'MAMMO.dBm';
+    private const PROFILE_AREA = 'MAMMO.SquareMeter';
+    private const PROFILE_MINUTES = 'MAMMO.Minutes';
+    private const PROFILE_PERCENT = 'MAMMO.Percent';
+    private const PROFILE_WH = 'MAMMO.Wh';
+    private const PROFILE_HOURS = 'MAMMO.Hours';
+    private const PROFILE_KG = 'MAMMO.Kilogram';
+    private const PROFILE_WORK_RESULT = 'MAMMO.WorkResult';
+    private const PROFILE_WORK_TYPE = 'MAMMO.WorkType';
     private const PROFILE_TASKS_PREFIX = 'MAMMO.Tasks.';
 
     private const MIN_INTERVAL = 30;
     private const REFRESH_LOCK_TIMEOUT = 180;
     private const RETRY_DELAYS = [5, 15];
     private const COMMAND_REFRESH_DELAY = 5;
-    private const EXTRAS_INTERVAL = 900;   // Arbeitsparameter und Aufgaben alle 15 Minuten
+    private const EXTRAS_INTERVAL = 900;   // Aufgaben, Statistik, Verlauf, Fehler alle 15 Minuten
     private const EXTRAS_RETRY = 300;      // nach Fehler erneut nach 5 Minuten
+    private const REPORT_DAYS = 30;        // Zeitraum für Verlauf und Fehlerprotokoll
 
     // Systemzustand
     private const SYS_INIT = 0;
@@ -78,6 +87,7 @@ class MammotionMower extends IPSModule
         $this->RegisterPropertyBoolean('Active', true);
         $this->RegisterPropertyBoolean('EnableControl', false);
         $this->RegisterPropertyBoolean('EnableTile', true);
+        $this->RegisterPropertyBoolean('EnableReports', true);
 
         $this->RegisterAttributeString('ResolvedDeviceID', '');
         $this->RegisterAttributeString('DeviceNickname', '');
@@ -89,6 +99,8 @@ class MammotionMower extends IPSModule
         $this->RegisterAttributeInteger('RetryAttempt', 0);
         $this->RegisterAttributeInteger('NextExtrasFetch', 0);
         $this->RegisterAttributeString('ExtrasError', '');
+        $this->RegisterAttributeString('LastWorkId', '');
+        $this->RegisterAttributeInteger('PreviousOperation', -1);
 
         $this->RegisterTimer('UpdateTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerUpdate", 0);');
         $this->RegisterTimer('RetryTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerRetry", 0);');
@@ -254,8 +266,8 @@ class MammotionMower extends IPSModule
         $nickname = $this->ReadAttributeString('DeviceNickname');
         $deviceID = $this->ReadAttributeString('ResolvedDeviceID');
         if ($deviceID !== '') {
-            $name = trim(($nickname !== '' ? $nickname : $this->ReadAttributeString('DeviceApiName')) . ($model !== '' ? ' – ' . $model : ''));
-            $lines[] = 'Mäher: ' . ($this->GetValue('Online') ? '🟢 online' : '⚪ offline') . ' – ' . ($name !== '' ? $name . ' ' : '') . '(' . $deviceID . ')';
+            $lines[] = 'Mäher: ' . ($this->GetValue('Online') ? '🟢 online' : '⚪ offline') . ' – ' . ($model !== '' ? $model : 'Mammotion')
+                . ' (' . ($nickname !== '' ? 'Name in der App: ' . $nickname . ', ' : '') . 'Device-ID ' . $deviceID . ')';
         } else {
             $lines[] = 'Mäher: ⏳ noch nicht ermittelt – erster Abruf folgt';
         }
@@ -268,6 +280,17 @@ class MammotionMower extends IPSModule
         }
         $lastSuccess = (int) $this->GetValue('LastSuccess');
         $lines[] = 'Letzte erfolgreiche Aktualisierung: ' . ($lastSuccess > 0 ? date('d.m.Y H:i:s', $lastSuccess) : '—');
+        if ($this->ReadPropertyBoolean('EnableReports')) {
+            $lastWork = (int) $this->GetValue('LastWorkEnd');
+            if ($lastWork > 0) {
+                $results = ['unbekannt', 'läuft', 'pausiert', 'vom Nutzer gestoppt', 'unterbrochen', 'abgeschlossen'];
+                $lines[] = 'Letzter Einsatz: ' . date('d.m.Y H:i', $lastWork) . ' – ' . number_format((float) $this->GetValue('LastWorkArea'), 0, ',', '.') . ' m², '
+                    . (int) $this->GetValue('LastWorkDuration') . ' min, ' . ($results[(int) $this->GetValue('LastWorkResult')] ?? '?');
+            }
+            $errorTime = (int) $this->GetValue('LastErrorTime');
+            $lines[] = 'Gerätefehler (30 Tage): ' . (int) $this->GetValue('ErrorCount30d')
+                . ($errorTime > 0 ? ' – zuletzt ' . date('d.m.Y H:i', $errorTime) . ': ' . (string) $this->GetValue('LastErrorText') : '');
+        }
         $lastCommand = (string) $this->GetValue('LastCommand');
         if ($lastCommand !== '') {
             $lines[] = 'Letzter Befehl: ' . $lastCommand;
@@ -368,26 +391,30 @@ class MammotionMower extends IPSModule
             $this->ApplyDeviceDetails(is_array($detail['data'] ?? null) ? $detail['data'] : []);
             $steps[] = 'Gerätestatus OK';
 
-            // Arbeitsparameter und Aufgaben ändern sich selten und werden seltener abgefragt
+            // Nach Ende eines Einsatzes Verlauf und Statistik zeitnah nachladen
+            $operation = (int) $this->GetValue('OperationStatus');
+            $previous = $this->ReadAttributeInteger('PreviousOperation');
+            if (in_array($previous, [self::OP_MOWING, self::OP_RETURNING], true) && !in_array($operation, [self::OP_MOWING, self::OP_RETURNING, self::OP_PAUSED], true)) {
+                $this->WriteAttributeInteger('NextExtrasFetch', min($this->ReadAttributeInteger('NextExtrasFetch'), time() + 120));
+            }
+            $this->WriteAttributeInteger('PreviousOperation', $operation);
+
+            // Aufgaben, Statistik, Verlauf und Fehlerprotokoll ändern sich selten und werden seltener abgefragt.
+            // Der Endpunkt /work-params wird bewusst NICHT verwendet (siehe README, Sicherheitshinweis).
             $partial = [];
             if (time() >= $this->ReadAttributeInteger('NextExtrasFetch')) {
-                try {
-                    $params = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/work-params');
-                    $p = is_array($params['data'] ?? null) ? $params['data'] : [];
-                    $this->SetValue('KnifeHeight', (int) ($p['knifeHeight'] ?? 0));
-                    $this->SetValue('Speed', (int) ($p['speed'] ?? 0));
-                    $steps[] = 'Arbeitsparameter OK';
-                } catch (RuntimeException $e) {
-                    if ($e->getCode() === self::ERR_AUTH) throw $e;
-                    $partial[] = 'Arbeitsparameter: ' . $e->getMessage();
+                $jobs = ['Aufgaben' => 'FetchTasks'];
+                if ($this->ReadPropertyBoolean('EnableReports')) {
+                    $jobs += ['Statistik' => 'FetchSummary', 'Verlauf' => 'FetchLastWork', 'Fehlerprotokoll' => 'FetchErrors'];
                 }
-                try {
-                    $plans = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/plan');
-                    $this->UpdateTasks(is_array($plans['data'] ?? null) ? $plans['data'] : []);
-                    $steps[] = 'Aufgaben OK';
-                } catch (RuntimeException $e) {
-                    if ($e->getCode() === self::ERR_AUTH) throw $e;
-                    $partial[] = 'Aufgaben: ' . $e->getMessage();
+                foreach ($jobs as $label => $method) {
+                    try {
+                        $this->$method($id);
+                        $steps[] = $label . ' OK';
+                    } catch (RuntimeException $e) {
+                        if ($e->getCode() === self::ERR_AUTH) throw $e;
+                        $partial[] = $label . ': ' . $e->getMessage();
+                    }
                 }
                 $this->WriteAttributeString('ExtrasError', implode(' | ', $partial));
                 $this->WriteAttributeInteger('NextExtrasFetch', time() + (count($partial) > 0 ? self::EXTRAS_RETRY : self::EXTRAS_INTERVAL));
@@ -397,7 +424,7 @@ class MammotionMower extends IPSModule
                 if ($cachedError !== '') {
                     $partial[] = $cachedError . ' (neuer Versuch ' . $next . ')';
                 } else {
-                    $steps[] = 'Arbeitsparameter/Aufgaben aus Zwischenspeicher (neu ' . $next . ')';
+                    $steps[] = 'Zusatzdaten aus Zwischenspeicher (neu ' . $next . ')';
                 }
             }
 
@@ -614,7 +641,13 @@ class MammotionMower extends IPSModule
         $raw = (string) ($data['status'] ?? '');
         $this->SetValue('Online', $online);
         $this->SetValue('Status', $raw !== '' ? $raw : 'Unbekannt');
-        $this->SetValue('OperationStatus', $this->MapOperationStatus($raw, $online));
+        $charge = (int) ($data['chargeStatus'] ?? 0);
+        $operation = $this->MapOperationStatus($raw, $online);
+        if ($operation === self::OP_READY && $charge !== 0) {
+            // Standby mit Ladestatus ungleich 0: Mäher steht in der Ladestation
+            $operation = self::OP_CHARGING;
+        }
+        $this->SetValue('OperationStatus', $operation);
         $this->SetValue('Battery', max(0, min(100, (int) ($data['batteryLevel'] ?? 0))));
         $this->SetValue('Firmware', (string) ($data['version'] ?? ''));
         $this->SetValue('ChargeStatus', (int) ($data['chargeStatus'] ?? 0));
@@ -655,12 +688,102 @@ class MammotionMower extends IPSModule
         $this->WriteAttributeString('TaskMap', (string) json_encode($map, JSON_UNESCAPED_UNICODE));
     }
 
+    private function FetchTasks(string $id): void
+    {
+        $plans = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/plan');
+        $this->UpdateTasks(is_array($plans['data'] ?? null) ? $plans['data'] : []);
+    }
+
+    private function FetchSummary(string $id): void
+    {
+        $r = $this->Api('POST', '/v1/mower/work-reports/summary', ['deviceId' => $id]);
+        $d = is_array($r['data'] ?? null) ? $r['data'] : [];
+        $this->SetValue('TotalWorkCount', (int) ($d['workCount'] ?? 0));
+        $this->SetValue('TotalWorkArea', round((float) ($d['totalWorkArea'] ?? 0), 1));
+        $this->SetValue('TotalSaveTime', round((float) ($d['saveTime'] ?? 0) / 60, 1));
+        $this->SetValue('TotalCarbon', round((float) ($d['carbonReduction'] ?? 0) / 1000, 2));
+    }
+
+    private function FetchLastWork(string $id): void
+    {
+        // Die API garantiert keine Sortierung: letzte 30 Tage laden und den jüngsten Eintrag wählen
+        $now = time();
+        $r = $this->Api('POST', '/v1/mower/work-reports/search', [
+            'deviceId'         => $id,
+            'pageNumber'       => 1,
+            'pageSize'         => 50,
+            'endWorkTimeStart' => ($now - self::REPORT_DAYS * 86400) * 1000,
+            'endWorkTimeEnd'   => ($now + 3600) * 1000
+        ]);
+        $records = is_array($r['data']['records'] ?? null) ? $r['data']['records'] : [];
+        $latest = null;
+        foreach ($records as $record) {
+            if ($latest === null || (int) ($record['endWorkTime'] ?? 0) > (int) ($latest['endWorkTime'] ?? 0)) {
+                $latest = $record;
+            }
+        }
+        if ($latest === null) {
+            return;
+        }
+        $this->SetValue('LastWorkEnd', intdiv((int) ($latest['endWorkTime'] ?? 0), 1000));
+        $this->SetValue('LastWorkResult', (int) ($latest['workResult'] ?? 0));
+        $this->SetValue('LastWorkType', (int) ($latest['workType'] ?? 0));
+        $this->SetValue('LastWorkArea', round((float) ($latest['workArea'] ?? 0), 1));
+        $this->SetValue('LastWorkDuration', (int) round((int) ($latest['workTimeUsed'] ?? 0) / 60));
+        $this->SetValue('LastWorkProgress', (int) round((float) ($latest['workProgress'] ?? 0)));
+
+        // Details nur laden, wenn ein neuer Einsatz dazugekommen ist
+        $workId = (string) ($latest['workId'] ?? '');
+        if ($workId === '' || $workId === $this->ReadAttributeString('LastWorkId')) {
+            return;
+        }
+        $detail = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/work-reports/' . rawurlencode($workId));
+        $d = is_array($detail['data'] ?? null) ? $detail['data'] : [];
+        $this->SetValue('LastWorkEnergy', round((float) ($d['energyConsume'] ?? 0), 1));
+        $param = is_array($d['workParam'] ?? null) ? $d['workParam'] : [];
+        if ((int) ($param['knifeHeight'] ?? 0) > 0) {
+            $this->SetValue('KnifeHeight', (int) $param['knifeHeight']);
+        }
+        if (isset($param['speed'])) {
+            $this->SetValue('Speed', (int) $param['speed']);
+        }
+        $this->WriteAttributeString('LastWorkId', $workId);
+    }
+
+    private function FetchErrors(string $id): void
+    {
+        $r = $this->Api('POST', '/v1/mower/error-codes/search', [
+            'deviceId'   => $id,
+            'pageNumber' => 1,
+            'pageSize'   => 50,
+            'startDate'  => date('Y-m-d', time() - self::REPORT_DAYS * 86400),
+            'endDate'    => date('Y-m-d')
+        ]);
+        $records = is_array($r['data']['records'] ?? null) ? $r['data']['records'] : [];
+        $this->SetValue('ErrorCount30d', (int) ($r['data']['total'] ?? count($records)));
+        $latest = null;
+        foreach ($records as $record) {
+            if ($latest === null || (int) ($record['gmtCreate'] ?? 0) > (int) ($latest['gmtCreate'] ?? 0)) {
+                $latest = $record;
+            }
+        }
+        if ($latest === null) {
+            $this->SetValue('LastErrorText', 'Keine Fehler in den letzten ' . self::REPORT_DAYS . ' Tagen');
+            $this->SetValue('LastErrorTime', 0);
+            return;
+        }
+        $text = trim((string) ($latest['implication'] ?? ''));
+        $this->SetValue('LastErrorText', 'Code ' . (int) ($latest['code'] ?? 0) . ($text !== '' ? ' – ' . $text : ''));
+        $this->SetValue('LastErrorTime', intdiv((int) ($latest['gmtCreate'] ?? 0), 1000));
+    }
+
     // ------------------------------------------------------------------
     // Variablen und Profile
     // ------------------------------------------------------------------
 
     private function MaintainVariables(): void
     {
+        $reports = $this->ReadPropertyBoolean('EnableReports');
         $vars = [
             // Frühere HTMLBox-Variable entfernen, die Darstellung übernimmt die Kachel der Instanz
             ['Dashboard', 'Dashboard', VARIABLETYPE_STRING, '~HTMLBox', 5, false],
@@ -669,7 +792,7 @@ class MammotionMower extends IPSModule
             ['Status', 'Status (Rohwert)', VARIABLETYPE_STRING, '', 21, true],
             ['Battery', 'Akku', VARIABLETYPE_INTEGER, '~Battery.100', 30, true],
             ['ChargeStatus', 'Ladestatus (Code)', VARIABLETYPE_INTEGER, '', 40, true],
-            ['KnifeHeight', 'Mähhöhe', VARIABLETYPE_INTEGER, self::PROFILE_MM, 50, true],
+            ['KnifeHeight', 'Mähhöhe (letzter Einsatz)', VARIABLETYPE_INTEGER, self::PROFILE_MM, 50, true],
             ['Speed', 'Geschwindigkeit (Code)', VARIABLETYPE_INTEGER, '', 60, true],
             ['Firmware', 'Firmware', VARIABLETYPE_STRING, '', 70, true],
             ['WifiRSSI', 'WLAN RSSI', VARIABLETYPE_INTEGER, self::PROFILE_DBM, 80, true],
@@ -677,6 +800,20 @@ class MammotionMower extends IPSModule
             ['CellularRSSI', 'Mobilfunk RSSI', VARIABLETYPE_INTEGER, self::PROFILE_DBM, 100, true],
             ['Control', 'Steuerung', VARIABLETYPE_INTEGER, self::PROFILE_CONTROL, 110, true],
             ['Task', 'Aufgabe starten', VARIABLETYPE_INTEGER, $this->TaskProfile(), 120, true],
+            ['LastWorkEnd', 'Letzter Einsatz', VARIABLETYPE_INTEGER, '~UnixTimestamp', 130, $reports],
+            ['LastWorkResult', 'Letzter Einsatz – Ergebnis', VARIABLETYPE_INTEGER, self::PROFILE_WORK_RESULT, 131, $reports],
+            ['LastWorkType', 'Letzter Einsatz – Art', VARIABLETYPE_INTEGER, self::PROFILE_WORK_TYPE, 132, $reports],
+            ['LastWorkArea', 'Letzter Einsatz – Fläche', VARIABLETYPE_FLOAT, self::PROFILE_AREA, 133, $reports],
+            ['LastWorkDuration', 'Letzter Einsatz – Dauer', VARIABLETYPE_INTEGER, self::PROFILE_MINUTES, 134, $reports],
+            ['LastWorkProgress', 'Letzter Einsatz – Fortschritt', VARIABLETYPE_INTEGER, self::PROFILE_PERCENT, 135, $reports],
+            ['LastWorkEnergy', 'Letzter Einsatz – Energie', VARIABLETYPE_FLOAT, self::PROFILE_WH, 136, $reports],
+            ['TotalWorkCount', 'Einsätze gesamt', VARIABLETYPE_INTEGER, '', 140, $reports],
+            ['TotalWorkArea', 'Gemähte Fläche gesamt', VARIABLETYPE_FLOAT, self::PROFILE_AREA, 141, $reports],
+            ['TotalSaveTime', 'Zeitersparnis gesamt', VARIABLETYPE_FLOAT, self::PROFILE_HOURS, 142, $reports],
+            ['TotalCarbon', 'CO₂-Einsparung gesamt', VARIABLETYPE_FLOAT, self::PROFILE_KG, 143, $reports],
+            ['LastErrorText', 'Letzter Gerätefehler', VARIABLETYPE_STRING, '', 150, $reports],
+            ['LastErrorTime', 'Letzter Gerätefehler – Zeitpunkt', VARIABLETYPE_INTEGER, '~UnixTimestamp', 151, $reports],
+            ['ErrorCount30d', 'Gerätefehler (30 Tage)', VARIABLETYPE_INTEGER, '', 152, $reports],
             ['SystemState', 'Systemzustand', VARIABLETYPE_INTEGER, self::PROFILE_SYSTEM, 200, true],
             ['Diagnostic', 'Diagnose', VARIABLETYPE_STRING, '', 210, true],
             ['LastCommand', 'Letzter Befehl', VARIABLETYPE_STRING, '', 220, true],
@@ -706,7 +843,7 @@ class MammotionMower extends IPSModule
         $this->EnsureIntegerProfile(self::PROFILE_OPERATION, 'Information', '', [
             [self::OP_OFFLINE, 'Offline', 0x808080], [self::OP_READY, 'Bereit', 0x00AA00],
             [self::OP_MOWING, 'Mäht', 0x00CC66], [self::OP_PAUSED, 'Pausiert', 0xFFCC00],
-            [self::OP_CHARGING, 'Lädt', 0x3399FF], [self::OP_RETURNING, 'Heimfahrt', 0x8B5CF6],
+            [self::OP_CHARGING, 'In der Station', 0x3399FF], [self::OP_RETURNING, 'Heimfahrt', 0x8B5CF6],
             [self::OP_DEVICE_ERROR, 'Gerätefehler', 0xFF0000], [self::OP_CLOUD_ERROR, 'API/Cloud-Fehler', 0xFF8800],
             [self::OP_UNKNOWN, 'Unbekannt', 0xAAAAAA]
         ]);
@@ -723,6 +860,29 @@ class MammotionMower extends IPSModule
         $this->EnsureIntegerProfile(self::PROFILE_MM, 'Distance', ' mm', []);
         $this->EnsureIntegerProfile(self::PROFILE_DBM, 'Intensity', ' dBm', []);
         $this->EnsureIntegerProfile($this->TaskProfile(), 'Script', '', []);
+        $this->EnsureIntegerProfile(self::PROFILE_MINUTES, 'Clock', ' min', []);
+        $this->EnsureIntegerProfile(self::PROFILE_PERCENT, 'Intensity', ' %', []);
+        $this->EnsureIntegerProfile(self::PROFILE_WORK_RESULT, 'Information', '', [
+            [0, 'Unbekannt', 0xAAAAAA], [1, 'Läuft', 0x00CC66], [2, 'Pausiert', 0xFFCC00],
+            [3, 'Vom Nutzer gestoppt', 0xFF8800], [4, 'Unterbrochen', 0xFF0000], [5, 'Abgeschlossen', 0x00AA00]
+        ]);
+        $this->EnsureIntegerProfile(self::PROFILE_WORK_TYPE, 'Calendar', '', [
+            [0, 'Unbekannt', -1], [1, 'Einzeleinsatz', -1], [2, 'Zeitplan', -1], [3, 'Punktmähen', -1], [4, 'Fortsetzung', -1]
+        ]);
+        $this->EnsureFloatProfile(self::PROFILE_AREA, 'Image', ' m²', 1);
+        $this->EnsureFloatProfile(self::PROFILE_WH, 'Electricity', ' Wh', 1);
+        $this->EnsureFloatProfile(self::PROFILE_HOURS, 'Clock', ' h', 1);
+        $this->EnsureFloatProfile(self::PROFILE_KG, 'Leaf', ' kg', 2);
+    }
+
+    private function EnsureFloatProfile(string $name, string $icon, string $suffix, int $digits): void
+    {
+        if (!IPS_VariableProfileExists($name)) {
+            IPS_CreateVariableProfile($name, VARIABLETYPE_FLOAT);
+            IPS_SetVariableProfileIcon($name, $icon);
+            IPS_SetVariableProfileText($name, '', $suffix);
+            IPS_SetVariableProfileDigits($name, $digits);
+        }
     }
 
     private function EnsureIntegerProfile(string $name, string $icon, string $suffix, array $associations): void
@@ -788,6 +948,24 @@ class MammotionMower extends IPSModule
             'lastCommand' => (string) $this->GetValue('LastCommand'),
             'diagnostic'  => (string) $this->GetValue('Diagnostic'),
             'tasks'       => $tasks,
+            'reports'     => $this->ReadPropertyBoolean('EnableReports'),
+            'last'        => $this->ReadPropertyBoolean('EnableReports') ? [
+                'end'      => (int) $this->GetValue('LastWorkEnd'),
+                'result'   => (int) $this->GetValue('LastWorkResult'),
+                'area'     => (float) $this->GetValue('LastWorkArea'),
+                'minutes'  => (int) $this->GetValue('LastWorkDuration'),
+                'progress' => (int) $this->GetValue('LastWorkProgress')
+            ] : null,
+            'totals'      => $this->ReadPropertyBoolean('EnableReports') ? [
+                'count'  => (int) $this->GetValue('TotalWorkCount'),
+                'area'   => (float) $this->GetValue('TotalWorkArea'),
+                'hours'  => (float) $this->GetValue('TotalSaveTime'),
+                'carbon' => (float) $this->GetValue('TotalCarbon')
+            ] : null,
+            'error'       => $this->ReadPropertyBoolean('EnableReports') ? [
+                'text' => (string) $this->GetValue('LastErrorText'),
+                'time' => (int) $this->GetValue('LastErrorTime')
+            ] : null,
             'version'     => self::MODULE_VERSION
         ];
     }

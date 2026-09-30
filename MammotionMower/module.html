@@ -87,6 +87,13 @@
   .sig i:nth-child(1) { height: 4px; } .sig i:nth-child(2) { height: 7px; } .sig i:nth-child(3) { height: 9px; } .sig i:nth-child(4) { height: 11px; }
   .sig i.on { background: var(--txt); }
 
+  .lastwork { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mut); min-width: 0; }
+  .lastwork b { color: var(--txt); font-weight: 700; }
+  .lastwork span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lastwork svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--dim); }
+  .lastwork.hide, .totals.hide { display: none; }
+  .totals { display: none; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .note.err { color: #fca5a5; background: rgba(239, 68, 68, .1); border-color: rgba(239, 68, 68, .35); }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .actions:empty { display: none; }
   .btn, .sel {
@@ -118,6 +125,8 @@
     .st { font-size: 30px; } .name { font-size: 20px; } .img { width: 60px; height: 60px; }
     .hero { gap: 30px; }
   }
+  @container tile (min-height: 540px) { .totals { display: grid; } .totals.hide { display: none; } }
+  @container tile (max-height: 380px) { .lastwork { display: none; } }
   /* Kleinere Kacheln: Inhalte schrittweise ausblenden */
   @container tile (max-height: 330px) { .chips { display: none; } }
   @container tile (max-height: 250px) { footer { display: none; } .model { display: none; } }
@@ -166,6 +175,17 @@
     <div class="chip"><span>Mobilfunk</span><b><span class="sig" id="csig"><i></i><i></i><i></i><i></i></span><span id="cell">–</span></b><em id="cellq">&nbsp;</em></div>
   </div>
 
+  <div class="totals hide" id="totals">
+    <div class="chip"><span>Einsätze</span><b id="tcount">–</b><em>gesamt</em></div>
+    <div class="chip"><span>Fläche</span><b id="tarea">–</b><em>gesamt gemäht</em></div>
+    <div class="chip"><span>CO₂</span><b id="tcarbon">–</b><em>eingespart</em></div>
+  </div>
+
+  <div class="lastwork hide" id="lastwork">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <span id="lastworktxt"></span>
+  </div>
+
   <div class="actions" id="actions"></div>
 
   <footer><span id="upd">Noch keine Aktualisierung</span><span id="msg"></span></footer>
@@ -191,7 +211,7 @@
     // Betriebsstatus: 0 Offline, 1 Bereit, 2 Mäht, 3 Pausiert, 4 Lädt, 5 Heimfahrt, 6 Gerätefehler, 7 API/Cloud-Fehler, 8 Unbekannt
     var OP = {
       0: ['Offline', '#64748b', 'OFFLINE'], 1: ['Bereit', '#22c55e', 'BEREIT'], 2: ['Mäht', '#10b981', 'MÄHT'],
-      3: ['Pausiert', '#f59e0b', 'PAUSE'], 4: ['Lädt', '#3b82f6', 'LADEN'], 5: ['Heimfahrt', '#8b5cf6', 'HEIMFAHRT'],
+      3: ['Pausiert', '#f59e0b', 'PAUSE'], 4: ['In der Station', '#3b82f6', 'STATION'], 5: ['Heimfahrt', '#8b5cf6', 'HEIMFAHRT'],
       6: ['Gerätefehler', '#ef4444', 'FEHLER'], 7: ['Cloud-Fehler', '#f97316', 'CLOUD'], 8: ['Unbekannt', '#94a3b8', 'STATUS ?']
     };
 
@@ -235,6 +255,16 @@
     }
 
     function control(value) { requestAction('Control', value); }
+
+    function fmt(n, d) { return Number(n || 0).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+    function duration(min) { min = min | 0; return min >= 60 ? Math.floor(min / 60) + ' h ' + ('0' + (min % 60)).slice(-2) : min + ' Min.'; }
+    function when(ts) {
+      var d = new Date(ts * 1000), now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+      var t = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      if (d.toDateString() === now.toDateString()) return 'heute ' + t;
+      if (d.toDateString() === y.toDateString()) return 'gestern ' + t;
+      return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + t;
+    }
 
     function shortError(d) {
       d = String(d || '');
@@ -300,12 +330,13 @@
       else if (!S.online && S.op !== 7) { label = 'Offline'; color = '#64748b'; badge = 'OFFLINE'; sub = 'Schläft oder nicht erreichbar'; }
       else if (S.op === 7) { sub = shortError(S.diagnostic); }
       else if (S.op === 8 && S.raw) { sub = 'Rohstatus: ' + S.raw; }
-      else if (S.op === 4) { sub = 'In der Ladestation'; }
-      if (S.active && S.system === 3) {
-        var parts = [];
-        if (S.diagnostic.indexOf('Aufgaben:') >= 0) parts.push('Aufgaben');
-        if (S.diagnostic.indexOf('Arbeitsparameter:') >= 0) parts.push('Mähhöhe');
-        note = (parts.length ? parts.join(' und ') : 'Zusatzdaten') + ' gerade nicht abrufbar';
+      else if (S.op === 4) { sub = (S.battery | 0) < 100 ? 'Lädt' : 'Voll geladen'; }
+      var noteErr = false;
+      if (S.active && S.error && S.error.time && (Date.now() / 1000 - S.error.time) < 86400) {
+        note = 'Gerätefehler: ' + S.error.text; noteErr = true;
+      } else if (S.active && S.system === 3) {
+        var parts = ['Aufgaben', 'Statistik', 'Verlauf', 'Fehlerprotokoll'].filter(function (p) { return S.diagnostic.indexOf(p + ':') >= 0; });
+        note = (parts.length ? parts.join(', ') : 'Zusatzdaten') + ' gerade nicht abrufbar';
       }
 
       tile.style.setProperty('--a', color);
@@ -335,7 +366,25 @@
       s.textContent = sub || '';
       s.className = 'sub' + ((S.system === 5 || S.op === 7) ? ' warn' : '');
       txt('notetxt', note);
-      $('note').className = 'note' + (note ? '' : ' hide');
+      $('note').className = 'note' + (note ? '' : ' hide') + (noteErr ? ' err' : '');
+
+      var lw = S.last && S.last.end ? S.last : null;
+      if (lw) {
+        var results = ['unbekannt', 'läuft', 'pausiert', 'gestoppt', 'unterbrochen', 'fertig'];
+        txt('lastworktxt', '');
+        var span = $('lastworktxt');
+        span.appendChild(document.createTextNode('Zuletzt gemäht '));
+        var b = document.createElement('b'); b.textContent = when(lw.end); span.appendChild(b);
+        span.appendChild(document.createTextNode(' · ' + fmt(lw.area, 0) + ' m² · ' + duration(lw.minutes) + ' · ' + (results[lw.result] || '?')));
+      }
+      $('lastwork').className = 'lastwork' + (lw ? '' : ' hide');
+      var tt = S.totals && S.totals.count ? S.totals : null;
+      if (tt) {
+        txt('tcount', String(tt.count));
+        txt('tarea', tt.area >= 10000 ? fmt(tt.area / 10000, 1) + ' ha' : fmt(tt.area, 0) + ' m²');
+        txt('tcarbon', fmt(tt.carbon, 1) + ' kg');
+      }
+      $('totals').className = 'totals' + (tt ? '' : ' hide');
 
       $('bar').style.strokeDashoffset = String(326.7 * (1 - batt / 100));
       txt('pct', S.lastSuccess ? batt + '%' : '–');

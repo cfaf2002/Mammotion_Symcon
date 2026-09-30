@@ -68,7 +68,8 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 
 - Schalter **Instanz aktiv** und Status-Block im Konfigurationsformular
 - Online-Status, Betriebsstatus, API-Rohstatus, Akku, Ladestatus, Firmware
-- WLAN-Signal, WLAN-IP, Mobilfunk-Signal, Mähhöhe, Geschwindigkeitscode
+- WLAN-Signal, WLAN-IP, Mobilfunk-Signal, Mähhöhe und Geschwindigkeit des letzten Einsatzes
+- Statistik (Einsätze, Fläche, Zeitersparnis, CO₂), letzter Einsatz mit Ergebnis, Dauer und Energie, Fehlerprotokoll der letzten 30 Tage
 - Aufgaben aus der Mammotion-App, eigene Aufgabenliste je Mäher
 - Steuerung: Aufgabe starten, Pause, Fortsetzen, Stop, zur Ladestation, Heimfahrt abbrechen
 - Schreibbefehle standardmäßig gesperrt
@@ -200,11 +201,24 @@ Bereits angelegte Mäher sind mit ihrer Instanz verknüpft. Instanzen, deren Dev
 | Abfrageintervall | zyklische Aktualisierung von Status, Akku und Netz, mindestens 30 Sekunden | 60 |
 | Instanz aktiv | für Wartung, Transport oder Einwinterung ausschalten | an |
 | Kachel-Visualisierung (HTML) aktiv | zeigt die Instanz als eigene Kachel; aus = Standardkachel mit Variablenliste | an |
+| Statistik, Einsatzverlauf und Fehlerprotokoll abrufen | legt die Variablen dafür an und fragt sie alle 15 Minuten ab | an |
 | Schreibbefehle freigeben | erlaubt reale Steuerbefehle | aus |
 
-Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit Nickname, Modell und Device-ID, Systemzustand, Diagnose, letzte Aktualisierung, letzten Befehl und ob Schreibbefehle freigegeben sind.
+Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit Modell, Name in der App und Device-ID, Systemzustand, Diagnose, letzte Aktualisierung, letzten Einsatz, Gerätefehler, letzten Befehl und ob Schreibbefehle freigegeben sind.
 
-Arbeitsparameter (Mähhöhe, Geschwindigkeit) und Aufgaben ändern sich selten. Sie werden deshalb nur alle 15 Minuten abgefragt, nach einem Fehler erneut nach 5 Minuten, und bei **Jetzt aktualisieren** sofort. Das entlastet die Cloud und vermeidet unnötige Warnungen.
+### Abfragetakt
+
+| Daten | Takt |
+|---|---|
+| Status, Akku, Ladestatus, Netz | im Abfrageintervall (Standard 60 Sekunden) |
+| Aufgaben, Statistik, Einsatzverlauf, Fehlerprotokoll | alle 15 Minuten, nach Fehler nach 5 Minuten, 2 Minuten nach Ende eines Einsatzes und bei **Jetzt aktualisieren** sofort |
+| Details eines Einsatzes (Energie, Mähhöhe, Geschwindigkeit) | einmal je neuem Einsatz |
+
+Verlauf und Fehlerprotokoll umfassen die letzten 30 Tage. Da die API keine Sortierung garantiert, wählt das Modul selbst den jüngsten Eintrag.
+
+### Sicherheitshinweis zu den Arbeitsparametern
+
+Die API bietet `GET /v1/mower/{deviceId}/work-params` für die aktuellen Arbeitsparameter. Laut der Home-Assistant-Integration für die Mammotion Open API hat ein LUBA 2 nach einem Aufruf dieses Endpunkts unerwartet mit dem Mähen begonnen. **Das Modul ruft diesen Endpunkt deshalb nicht auf.** Mähhöhe und Geschwindigkeit stammen stattdessen aus dem Bericht des letzten Einsatzes und zeigen die dort verwendeten Werte.
 
 ### Objektbaum
 
@@ -215,7 +229,7 @@ Mammotion Mäher
 ├── Status (Rohwert)
 ├── Akku
 ├── Ladestatus (Code)
-├── Mähhöhe
+├── Mähhöhe (letzter Einsatz)
 ├── Geschwindigkeit (Code)
 ├── Firmware
 ├── WLAN RSSI
@@ -223,6 +237,20 @@ Mammotion Mäher
 ├── Mobilfunk RSSI
 ├── Steuerung
 ├── Aufgabe starten
+├── Letzter Einsatz                      (Zeitpunkt Ende)
+├── Letzter Einsatz – Ergebnis           (Läuft, Pausiert, Vom Nutzer gestoppt, Unterbrochen, Abgeschlossen)
+├── Letzter Einsatz – Art                (Einzeleinsatz, Zeitplan, Punktmähen, Fortsetzung)
+├── Letzter Einsatz – Fläche             (m²)
+├── Letzter Einsatz – Dauer              (min)
+├── Letzter Einsatz – Fortschritt        (%)
+├── Letzter Einsatz – Energie            (Wh)
+├── Einsätze gesamt
+├── Gemähte Fläche gesamt                (m²)
+├── Zeitersparnis gesamt                 (h)
+├── CO₂-Einsparung gesamt                (kg)
+├── Letzter Gerätefehler                 (Code und Beschreibung)
+├── Letzter Gerätefehler – Zeitpunkt
+├── Gerätefehler (30 Tage)
 ├── Systemzustand
 ├── Diagnose
 ├── Letzter Befehl
@@ -250,7 +278,7 @@ Mammotion Mäher
 | 1 | Bereit |
 | 2 | Mäht |
 | 3 | Pausiert |
-| 4 | Lädt |
+| 4 | In der Station (Standby mit Ladestatus ungleich 0 oder Rohstatus „Charging“) |
 | 5 | Heimfahrt |
 | 6 | Gerätefehler |
 | 7 | API/Cloud-Fehler |
@@ -357,12 +385,17 @@ Schreibende Funktionen werfen eine Exception, wenn Schreibbefehle nicht freigege
 POST https://id.mammotion.com/oauth2/token
 GET  /v1/mowers
 GET  /v1/mower/{deviceId}
-GET  /v1/mower/{deviceId}/work-params
 GET  /v1/mower/{deviceId}/plan
+POST /v1/mower/work-reports/summary
+POST /v1/mower/work-reports/search
+GET  /v1/mower/{deviceId}/work-reports/{workId}
+POST /v1/mower/error-codes/search
 POST /v1/mower/action
 ```
 
 Die Cloud-Instanz leitet nur `GET`- und `POST`-Anfragen auf `/v1/…` weiter.
+
+Die offizielle Spezifikation (abrufbar unter `https://api-open.mammotion.com/api-docs`) enthält weitere Endpunkte, die das Modul noch nicht nutzt: Karten- und Materialdaten (`/v1/mower/material/fetch`), Abonnements mit Live-Daten per SSE (`/v1/devices/subscriptions`, laut Spezifikation nur für LUBA 3 AWD), ein Ticket für eine lokale WebSocket-Verbindung zum Mäher (`/v1/mower/ws/ticket`) und die lokale Netzwerkkonfiguration für Home-Automation (`/v1/ha/local-network/…`). Bewusst nicht genutzt wird `/v1/mower/{deviceId}/work-params` (siehe Sicherheitshinweis).
 
 ## Fehlerbehandlung und Wiederholungen
 
@@ -436,8 +469,9 @@ Skripte mit `MAMMO_Pause`, `MAMMO_StartTask` usw. funktionieren weiter, die Inst
 
 ## Bekannte Einschränkungen
 
-- Die Work-Report-Endpunkte waren während der Entwicklung nicht zuverlässig nutzbar. Mähhistorie und Flächenstatistiken fehlen daher noch.
-- **Aufgabe starten** sendet den Aufgabennamen (`taskName`). Die Aufgaben-ID wird mitgespeichert und kann genutzt werden, sobald die API-Dokumentation das bestätigt.
+- Karten, Live-Position und Push-Daten (SSE, lokaler WebSocket) sind noch nicht umgesetzt.
+- Der Ladestatus ist laut Spezifikation 0 oder 1. Auf echten Geräten wurden weitere Werte beobachtet; sie werden als Rohwert angezeigt.
+- **Aufgabe starten** sendet laut Spezifikation den Aufgabennamen (`taskName`).
 - Die Zuordnung des Betriebsstatus beruht auf den bisher beobachteten Rohwerten.
 
 ## Nutzungshinweis

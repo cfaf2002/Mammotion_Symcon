@@ -34,6 +34,11 @@
           "type": "CheckBox",
           "name": "EnableTile",
           "caption": "Kachel-Visualisierung (HTML) aktiv"
+        },
+        {
+          "type": "CheckBox",
+          "name": "EnableReports",
+          "caption": "Statistik, Einsatzverlauf und Fehlerprotokoll abrufen (alle 15 Minuten)"
         }
       ]
     },
@@ -67,11 +72,35 @@
     }
   ],
   "status": [
-    { "code": 102, "icon": "active", "caption": "Aktiv" },
-    { "code": 104, "icon": "inactive", "caption": "Instanz deaktiviert" },
-    { "code": 200, "icon": "error", "caption": "Abfrageintervall ungültig (mindestens 30 Sekunden)" },
-    { "code": 201, "icon": "error", "caption": "API- oder Cloudfehler, Details unter Status" },
-    { "code": 202, "icon": "error", "caption": "Mäher im Mammotion-Konto nicht gefunden" },
-    { "code": 203, "icon": "error", "caption": "Cloud-Instanz nicht verbunden, nicht aktiv oder Nutzungshinweis nicht bestätigt" }
+    {
+      "code": 102,
+      "icon": "active",
+      "caption": "Aktiv"
+    },
+    {
+      "code": 104,
+      "icon": "inactive",
+      "caption": "Instanz deaktiviert"
+    },
+    {
+      "code": 200,
+      "icon": "error",
+      "caption": "Abfrageintervall ungültig (mindestens 30 Sekunden)"
+    },
+    {
+      "code": 201,
+      "icon": "error",
+      "caption": "API- oder Cloudfehler, Details unter Status"
+    },
+    {
+      "code": 202,
+      "icon": "error",
+      "caption": "Mäher im Mammotion-Konto nicht gefunden"
+    },
+    {
+      "code": 203,
+      "icon": "error",
+      "caption": "Cloud-Instanz nicht verbunden, nicht aktiv oder Nutzungshinweis nicht bestätigt"
+    }
   ]
 }
