@@ -44,6 +44,49 @@
     },
     {
       "type": "ExpansionPanel",
+      "caption": "Kachel-Hintergrund",
+      "expanded": false,
+      "items": [
+        {
+          "type": "Select",
+          "name": "TileBackgroundMode",
+          "caption": "Hintergrund",
+          "options": [
+            {
+              "caption": "Farbverlauf (Standard)",
+              "value": 0
+            },
+            {
+              "caption": "Bild aus Medienobjekt",
+              "value": 1
+            },
+            {
+              "caption": "Transparent (Hintergrund der Kachel-Visualisierung)",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "type": "SelectMedia",
+          "name": "TileBackgroundMedia",
+          "caption": "Bild (Medienobjekt)"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "TileBackgroundDim",
+          "caption": "Abdunklung des Bildes",
+          "suffix": "%",
+          "minimum": 0,
+          "maximum": 90
+        },
+        {
+          "type": "Label",
+          "caption": "Bild als Medienobjekt im Objektbaum anlegen (Objekt hinzufügen → Medien → Bild) und hier auswählen. Empfohlen: JPG oder WebP, höchstens ca. 2 MB. Bei „Transparent“ gilt der Hintergrund, der in der Kachel-Visualisierung für diese Kachel eingestellt ist. Änderungen werden nach dem Übernehmen beim nächsten Öffnen der Kachel sichtbar."
+        }
+      ]
+    },
+    {
+      "type": "ExpansionPanel",
       "caption": "Steuerung",
       "expanded": true,
       "items": [

@@ -346,6 +346,22 @@ Alle Befehle sind immer verfügbar. Die zum aktuellen Zustand passenden werden h
 
 **Starten** und **Fortsetzen** setzen den Mäher in Bewegung und müssen deshalb mit einem zweiten Tipp auf „Wirklich?“ bestätigt werden (4 Sekunden Zeit). Offline oder bei einem Fehler werden keine Befehle angeboten.
 
+**Hintergrund** (Instanz → Block „Kachel-Hintergrund“):
+
+| Einstellung | Wirkung |
+|---|---|
+| Farbverlauf (Standard) | dunkler Verlauf, Akzentfarbe je nach Zustand |
+| Bild aus Medienobjekt | eigenes Bild als Hintergrund, mit einstellbarer Abdunklung (0–90 %, Standard 55 %) |
+| Transparent | es gilt der Hintergrund, der in der Kachel-Visualisierung für diese Kachel eingestellt ist |
+
+So wird ein Bild eingebunden, wie in IP-Symcon üblich:
+
+1. Im Objektbaum **Objekt hinzufügen → Medien → Bild** wählen und das Bild hochladen (JPG oder WebP empfohlen, höchstens ca. 2 MB).
+2. In der Mäher-Instanz unter **Kachel-Hintergrund** „Bild aus Medienobjekt“ wählen und das Medienobjekt auswählen.
+3. **Übernehmen** drücken und die Kachel neu öffnen.
+
+Das Medienobjekt wird als Referenz der Instanz eingetragen, IP-Symcon warnt deshalb vor dem Löschen. Das Bild wird nur beim Laden der Kachel übertragen, die laufenden Aktualisierungen bleiben klein. Ist das Medienobjekt kein Bild, fehlt es oder ist es zu groß, verwendet die Kachel den Farbverlauf, und der Status-Block nennt den Grund.
+
 **Größen:** Die Kachel passt sich an. Auf schmaleren Kacheln zeigt die Befehlsleiste nur Symbole (Name als Tooltip). Auf niedrigeren Kacheln werden nacheinander Verlaufszeilen, Kennzahlen, Aufgabenzeile, Fußzeile und Befehle ausgeblendet. Auf sehr kleinen Kacheln bleiben Name, Akku-Ring und Status.
 
 | Zustand | Farbe |

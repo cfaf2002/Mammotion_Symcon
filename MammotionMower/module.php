@@ -88,6 +88,9 @@ class MammotionMower extends IPSModule
         $this->RegisterPropertyBoolean('Active', true);
         $this->RegisterPropertyBoolean('EnableControl', false);
         $this->RegisterPropertyBoolean('EnableTile', true);
+        $this->RegisterPropertyInteger('TileBackgroundMode', 0);   // 0 Farbverlauf, 1 Medienobjekt, 2 transparent
+        $this->RegisterPropertyInteger('TileBackgroundMedia', 0);
+        $this->RegisterPropertyInteger('TileBackgroundDim', 55);
         $this->RegisterPropertyBoolean('EnableReports', true);
 
         $this->RegisterAttributeString('ResolvedDeviceID', '');
@@ -127,6 +130,7 @@ class MammotionMower extends IPSModule
         $this->EnsureProfiles();
         $this->MaintainVariables();
         $this->SetVisualizationType($this->ReadPropertyBoolean('EnableTile') ? 1 : 0);
+        $this->UpdateMediaReference();
         $this->ReleaseRefreshLock();
         $this->ResetRetry();
         $this->WriteAttributeInteger('NextExtrasFetch', 0);
@@ -300,6 +304,15 @@ class MammotionMower extends IPSModule
             $lines[] = 'Letzter Befehl: ' . $lastCommand;
         }
         $lines[] = 'Schreibbefehle: ' . ($this->ReadPropertyBoolean('EnableControl') ? '🔓 freigegeben' : '🔒 gesperrt');
+        if ($this->ReadPropertyBoolean('EnableTile')) {
+            $mode = $this->ReadPropertyInteger('TileBackgroundMode');
+            if ($mode === 1) {
+                $image = $this->BuildBackgroundImage();
+                $lines[] = 'Kachel-Hintergrund: ' . ($image['error'] === '' ? '🖼 Bild „' . IPS_GetName($this->ReadPropertyInteger('TileBackgroundMedia')) . '“ (' . round(strlen($image['uri']) / 1024) . ' KB)' : '⚠️ ' . $image['error'] . ' – Farbverlauf wird verwendet');
+            } else {
+                $lines[] = 'Kachel-Hintergrund: ' . ($mode === 2 ? 'transparent (Hintergrund aus der Kachel-Visualisierung)' : 'Farbverlauf');
+            }
+        }
 
         foreach ($form['elements'] as &$element) {
             if (($element['name'] ?? '') === 'StatusPanel') {
@@ -965,8 +978,72 @@ class MammotionMower extends IPSModule
     public function GetVisualizationTile(): string
     {
         $html = (string) file_get_contents(__DIR__ . '/module.html');
+        // Hintergrundbild nur einmal beim Laden der Kachel übertragen, nicht bei jedem Update
+        if ($this->ReadPropertyInteger('TileBackgroundMode') === 1) {
+            $image = $this->BuildBackgroundImage();
+            if ($image['error'] === '') {
+                $html = '<style>.tile{--img:url("' . $image['uri'] . '")}</style>' . $html;
+            }
+        }
         $state = (string) json_encode($this->BuildTileState(), JSON_UNESCAPED_UNICODE);
         return $html . '<script>handleMessage(' . json_encode($state, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE) . ');</script>';
+    }
+
+    /**
+     * Liefert das gewählte Medienobjekt als data-URI oder eine Fehlerbeschreibung.
+     */
+    private function BuildBackgroundImage(): array
+    {
+        $error = $this->BackgroundError();
+        if ($error !== '') {
+            return ['uri' => '', 'error' => $error];
+        }
+        $mediaID = $this->ReadPropertyInteger('TileBackgroundMedia');
+        $media = IPS_GetMedia($mediaID);
+        $content = (string) IPS_GetMediaContent($mediaID);
+        if ($content === '') {
+            return ['uri' => '', 'error' => 'das Medienobjekt enthält keine Bilddaten'];
+        }
+        if (strlen($content) > 3 * 1024 * 1024) {
+            return ['uri' => '', 'error' => 'Bild ist größer als ca. 2 MB, bitte verkleinern'];
+        }
+        $types = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml'];
+        $extension = strtolower(pathinfo((string) $media['MediaFile'], PATHINFO_EXTENSION));
+        $mime = $types[$extension] ?? 'image/jpeg';
+        return ['uri' => 'data:' . $mime . ';base64,' . preg_replace('/[^A-Za-z0-9+\/=]/', '', $content), 'error' => ''];
+    }
+
+    /**
+     * Schnelle Prüfung ohne die Bilddaten zu lesen (für die minütlichen Kachel-Updates).
+     */
+    private function BackgroundError(): string
+    {
+        $mediaID = $this->ReadPropertyInteger('TileBackgroundMedia');
+        if ($mediaID <= 0 || !IPS_MediaExists($mediaID)) {
+            return 'kein Medienobjekt ausgewählt';
+        }
+        $media = IPS_GetMedia($mediaID);
+        if ((int) $media['MediaType'] !== MEDIATYPE_IMAGE) {
+            return 'das gewählte Medienobjekt ist kein Bild';
+        }
+        if ((int) ($media['MediaSize'] ?? 0) > 2 * 1024 * 1024) {
+            return 'Bild ist größer als ca. 2 MB, bitte verkleinern';
+        }
+        return '';
+    }
+
+    /**
+     * Meldet das Medienobjekt als Referenz an, damit IP-Symcon beim Löschen warnt.
+     */
+    private function UpdateMediaReference(): void
+    {
+        foreach ($this->GetReferenceList() as $reference) {
+            $this->UnregisterReference($reference);
+        }
+        $mediaID = $this->ReadPropertyInteger('TileBackgroundMedia');
+        if ($this->ReadPropertyInteger('TileBackgroundMode') === 1 && $mediaID > 0 && IPS_MediaExists($mediaID)) {
+            $this->RegisterReference($mediaID);
+        }
     }
 
     private function UpdateTile(): void
@@ -1025,7 +1102,11 @@ class MammotionMower extends IPSModule
                 'text' => (string) $this->GetValue('LastErrorText'),
                 'time' => (int) $this->GetValue('LastErrorTime')
             ] : null,
-            'version'     => self::MODULE_VERSION
+            'version'     => self::MODULE_VERSION,
+            'bg'          => [
+                'mode' => $this->ReadPropertyInteger('TileBackgroundMode') === 1 && $this->BackgroundError() !== '' ? 0 : $this->ReadPropertyInteger('TileBackgroundMode'),
+                'dim'  => max(0, min(90, $this->ReadPropertyInteger('TileBackgroundDim')))
+            ]
         ];
     }
 }

@@ -30,6 +30,18 @@
       transparent 28px 56px);
   }
   .tile.mowing .grass { opacity: 1; animation: mow 9s linear infinite; }
+  /* Hintergrund: Bild aus Medienobjekt, abgedunkelt für Lesbarkeit */
+  .tile.bg-image {
+    background:
+      radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--a) 22%, transparent), transparent 60%),
+      linear-gradient(180deg, rgba(0, 0, 0, .45), transparent 30%, transparent 65%, rgba(0, 0, 0, .45)),
+      linear-gradient(rgba(8, 13, 25, var(--shade, .55)), rgba(8, 13, 25, var(--shade, .55))),
+      var(--img) center / cover no-repeat, linear-gradient(160deg, var(--bg1), var(--bg2));
+  }
+  /* Hintergrund: transparent, es gilt der Hintergrund aus der Kachel-Visualisierung */
+  .tile.bg-none { background: linear-gradient(180deg, rgba(0, 0, 0, .4), transparent 30%, transparent 65%, rgba(0, 0, 0, .4)); }
+  .tile.bg-image .badge, .tile.bg-none .badge, .tile.bg-image .img, .tile.bg-none .img { background-color: rgba(8, 13, 25, .6); }
+  .tile.bg-image, .tile.bg-none { text-shadow: 0 1px 3px rgba(0, 0, 0, .6); --mut: rgba(241, 245, 249, .82); --dim: rgba(241, 245, 249, .7); }
   @keyframes mow { from { transform: translateX(0); } to { transform: translateX(122px); } }
   .tile > *:not(.grass) { position: relative; }
 
@@ -390,6 +402,10 @@
       }
 
       tile.style.setProperty('--a', color);
+      var bg = S.bg || { mode: 0, dim: 55 };
+      tile.classList.toggle('bg-image', bg.mode === 1);
+      tile.classList.toggle('bg-none', bg.mode === 2);
+      tile.style.setProperty('--shade', String((bg.dim | 0) / 100));
       var batt = Math.max(0, Math.min(100, S.battery | 0));
       var bcol = batt < 20 ? '#ef4444' : batt < 40 ? '#f59e0b' : '#22c55e';
       tile.style.setProperty('--b', bcol);
