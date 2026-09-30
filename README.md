@@ -324,7 +324,8 @@ Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit 
 - Status-Badge, pulsierend beim Mähen, Laden und bei der Heimfahrt
 - Akku-Ring mit Farbwechsel (grün, gelb unter 40 %, rot unter 20 %)
 - Mähhöhe, WLAN und Mobilfunk mit Signalbalken und Qualitätsbewertung
-- kurze Hinweise bei Fehlern, Offline oder unbekanntem Rohstatus, gelber Hinweis-Chip wenn Aufgaben oder Mähhöhe gerade nicht abrufbar sind
+- kurze Hinweise bei Fehlern, Offline oder unbekanntem Rohstatus, gelber Hinweis-Chip wenn Zusatzdaten gerade nicht abrufbar sind
+- Gerätefehler aus dem Fehlerprotokoll: rot nur bei aktivem Fehlerzustand oder wenn die Meldung höchstens 30 Minuten alt ist; ältere Meldungen der letzten 24 Stunden als Zeile „Meldung heute 13:09 · …“
 - „Aktualisiert vor x Min.“ und letzter Befehl
 - animierte Mähbahnen im Hintergrund, solange der Mäher mäht
 

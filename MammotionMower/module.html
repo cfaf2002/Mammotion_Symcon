@@ -92,6 +92,7 @@
   .lastwork span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lastwork svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--dim); }
   .lastwork.hide, .totals.hide { display: none; }
+  .lastwork.past svg { color: #f59e0b; }
   .totals { display: none; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .note.err { color: #fca5a5; background: rgba(239, 68, 68, .1); border-color: rgba(239, 68, 68, .35); }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -184,6 +185,11 @@
   <div class="lastwork hide" id="lastwork">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
     <span id="lastworktxt"></span>
+  </div>
+
+  <div class="lastwork hide past" id="pasterr">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>
+    <span id="pasterrtxt"></span>
   </div>
 
   <div class="actions" id="actions"></div>
@@ -331,10 +337,16 @@
       else if (S.op === 7) { sub = shortError(S.diagnostic); }
       else if (S.op === 8 && S.raw) { sub = 'Rohstatus: ' + S.raw; }
       else if (S.op === 4) { sub = (S.battery | 0) < 100 ? 'Lädt' : 'Voll geladen'; }
-      var noteErr = false;
-      if (S.active && S.error && S.error.time && (Date.now() / 1000 - S.error.time) < 86400) {
-        note = 'Gerätefehler: ' + S.error.text; noteErr = true;
-      } else if (S.active && S.system === 3) {
+      var noteErr = false, pastErr = '';
+      var errAge = S.error && S.error.time ? Date.now() / 1000 - S.error.time : Infinity;
+      if (S.active && S.error && S.error.time && (S.op === 6 || errAge < 1800)) {
+        // aktueller Fehler: Mäher meldet Fehlerzustand oder Meldung ist höchstens 30 Minuten alt
+        note = (S.op === 6 ? 'Gerätefehler: ' : 'Vor ' + Math.max(1, Math.round(errAge / 60)) + ' Min.: ') + S.error.text; noteErr = true;
+      } else if (S.active && errAge < 86400) {
+        // vergangene Meldung: nur als Verlauf mit Uhrzeit anzeigen
+        pastErr = S.error.text;
+      }
+      if (!noteErr && S.active && S.system === 3) {
         var parts = ['Aufgaben', 'Statistik', 'Verlauf', 'Fehlerprotokoll'].filter(function (p) { return S.diagnostic.indexOf(p + ':') >= 0; });
         note = (parts.length ? parts.join(', ') : 'Zusatzdaten') + ' gerade nicht abrufbar';
       }
@@ -378,6 +390,14 @@
         span.appendChild(document.createTextNode(' · ' + fmt(lw.area, 0) + ' m² · ' + duration(lw.minutes) + ' · ' + (results[lw.result] || '?')));
       }
       $('lastwork').className = 'lastwork' + (lw ? '' : ' hide');
+      var pe = $('pasterrtxt');
+      pe.textContent = '';
+      if (pastErr) {
+        pe.appendChild(document.createTextNode('Meldung '));
+        var eb = document.createElement('b'); eb.textContent = when(S.error.time); pe.appendChild(eb);
+        pe.appendChild(document.createTextNode(' · ' + pastErr));
+      }
+      $('pasterr').className = 'lastwork past' + (pastErr ? '' : ' hide');
       var tt = S.totals && S.totals.count ? S.totals : null;
       if (tt) {
         txt('tcount', String(tt.count));

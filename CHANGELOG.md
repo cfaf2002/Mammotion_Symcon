@@ -19,7 +19,7 @@ Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen frühe
 - eigene Kachel für die Kachel-Visualisierung (HTML-SDK) mit Live-Updates, zustandsabhängigen Buttons, Bestätigung vor Start und Weiterfahrt, Akku-Ring, Signalbalken und Mähanimation; zeigt Modell statt App-Nickname, lässt Platz für Instanzname und Vergrößern-Symbol, passt sich an die Kachelgröße an; in der Instanz abschaltbar
 - Statistik (`work-reports/summary`): Einsätze, gemähte Fläche, Zeitersparnis, CO₂-Einsparung
 - letzter Einsatz (`work-reports/search` und Detail): Zeitpunkt, Ergebnis, Art, Fläche, Dauer, Fortschritt, Energie, Mähhöhe und Geschwindigkeit
-- Fehlerprotokoll (`error-codes/search`): letzter Gerätefehler mit Code und Beschreibung, Anzahl der letzten 30 Tage; frische Fehler (24 h) erscheinen in der Kachel
+- Fehlerprotokoll (`error-codes/search`): letzter Gerätefehler mit Code und Beschreibung, Anzahl der letzten 30 Tage; in der Kachel rot nur bei aktivem Gerätefehler oder Meldungen der letzten 30 Minuten, ältere Meldungen der letzten 24 Stunden als Verlaufszeile mit Uhrzeit
 - Schalter „Statistik, Einsatzverlauf und Fehlerprotokoll abrufen“
 - Aufgaben, Statistik, Verlauf und Fehler werden alle 15 Minuten abgefragt (nach Fehler nach 5 Minuten, 2 Minuten nach Einsatzende, bei manuellem Abruf sofort)
 - Betriebsstatus „In der Station“ bei Standby mit Ladestatus ungleich 0
