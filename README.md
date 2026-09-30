@@ -1,7 +1,7 @@
 # Mammotion Open API für IP-Symcon
 
-[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
-[![Build](https://img.shields.io/badge/build-1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
+[![Version](https://img.shields.io/badge/version-2.1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
+[![Build](https://img.shields.io/badge/build-2-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
 [![IP-Symcon](https://img.shields.io/badge/IP--Symcon-9.0%2B-orange.svg)](https://www.symcon.de/)
 [![PHP](https://img.shields.io/badge/PHP-8.x-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
 [![Mammotion Open API](https://img.shields.io/badge/Mammotion-Open%20API-success.svg)](https://developer.mammotion.com/)
@@ -9,7 +9,7 @@
 
 Integration von Mammotion-Mährobotern in IP-Symcon über die offizielle Mammotion Open API.
 
-Version **2.0** ist eine vollständige Neuentwicklung mit der für IP-Symcon üblichen Aufteilung in Cloud-, Geräte- und Konfigurator-Instanz. Sie ist **nicht** mit den 0.x- und 1.x-Instanzen kompatibel (neue Modul-GUIDs). Alte Instanzen vor der Installation löschen, siehe [Umstieg von 1.x](#umstieg-von-1x).
+Version **2.1** (Build 2) baut auf der Neuentwicklung 2.0 auf. Sie ist eine vollständige Neuentwicklung mit der für IP-Symcon üblichen Aufteilung in Cloud-, Geräte- und Konfigurator-Instanz. Sie ist **nicht** mit den 0.x- und 1.x-Instanzen kompatibel (neue Modul-GUIDs). Alte Instanzen vor der Installation löschen, siehe [Umstieg von 1.x](#umstieg-von-1x).
 
 ## Inhaltsverzeichnis
 
@@ -30,6 +30,7 @@ Version **2.0** ist eine vollständige Neuentwicklung mit der für IP-Symcon üb
 - [Fehlerbehebung](#fehlerbehebung)
 - [Umstieg von 1.x](#umstieg-von-1x)
 - [Bekannte Einschränkungen](#bekannte-einschränkungen)
+- [Nutzungshinweis](#nutzungshinweis)
 - [Lizenz](#lizenz)
 - [Haftung und Markenhinweis](#haftung-und-markenhinweis)
 
@@ -48,6 +49,8 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 
 ### Mammotion Cloud
 
+- Nutzungshinweis, der vor der ersten Anfrage bestätigt werden muss
+- Schalter **Instanz aktiv** und Status-Block im Konfigurationsformular
 - OAuth2-Anmeldung über Client-ID und Client-Secret
 - Token-Cache mit Erneuerung fünf Minuten vor Ablauf, Refresh-Token mit Fallback auf Client-Credentials
 - Token-Abruf gegen parallele Anfragen mehrerer Mäher abgesichert
@@ -58,11 +61,12 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 ### Mammotion Konfigurator
 
 - listet alle Mäher des Kontos mit Name, Modell, Device-ID und Online-Status
-- legt Mäher-Instanzen mit hinterlegter Device-ID per Klick an
+- legt Mäher-Instanzen mit hinterlegter Device-ID per Klick an, Name „Mähroboter“ (bei mehreren Mähern „Mähroboter <Nickname>“)
 - zeigt vorhandene Instanzen und Instanzen, deren Mäher nicht mehr im Konto ist
 
 ### Mammotion Mäher
 
+- Schalter **Instanz aktiv** und Status-Block im Konfigurationsformular
 - Online-Status, Betriebsstatus, API-Rohstatus, Akku, Ladestatus, Firmware
 - WLAN-Signal, WLAN-IP, Mobilfunk-Signal, Mähhöhe, Geschwindigkeitscode
 - Aufgaben aus der Mammotion-App, eigene Aufgabenliste je Mäher
@@ -72,7 +76,7 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 - Systemzustand, Diagnose und Zeitstempel
 - Sperre gegen parallele Abrufe mit automatischer Freigabe
 - zwei Wiederholungen bei vorübergehenden Fehlern
-- Premium-Dashboard, abschaltbar
+- Premium-Dashboard, in der Instanz aktivier- und deaktivierbar
 - sauberer Start nach einem Neustart von IP-Symcon
 
 ## Voraussetzungen
@@ -124,7 +128,7 @@ Die Installation über die Repository-Adresse wird empfohlen. Sie ermöglicht Up
 ## Einrichtung
 
 1. Instanz **Mammotion Konfigurator** anlegen. IP-Symcon legt die übergeordnete **Mammotion Cloud** automatisch mit an.
-2. Die Cloud-Instanz öffnen (Zahnrad am Konfigurator oder unter *I/O Instanzen*), Client-ID und Client-Secret eintragen, **Übernehmen**.
+2. Die Cloud-Instanz öffnen (Zahnrad am Konfigurator oder unter *I/O Instanzen*), den **Nutzungshinweis** lesen und bestätigen, Client-ID und Client-Secret eintragen, **Übernehmen**.
 3. **Verbindung testen** drücken. Erwartet: `ERFOLG: 1 Mäher gefunden (Horst)`.
 4. Den Konfigurator öffnen und den gewünschten Mäher mit **Erstellen** anlegen.
 5. In der Mäher-Instanz **Jetzt aktualisieren** drücken und Systemzustand sowie Diagnose prüfen.
@@ -143,18 +147,21 @@ Mäher:  Systemzustand = Betriebsbereit, Online = Ja
 
 | Einstellung | Bedeutung |
 |---|---|
+| Gelesen – Nutzung auf eigene Verantwortung | bestätigt den Nutzungshinweis; ohne Bestätigung keine Anfragen |
+| Instanz aktiv | schaltet alle Cloudzugriffe dieses Kontos ab (alle Mäher pausieren) |
 | Client ID | aus dem Mammotion Developer Portal |
 | Client Secret | aus dem Mammotion Developer Portal |
-| Cloud-Verbindung aktiv | schaltet alle Cloudzugriffe dieses Kontos ab (alle Mäher pausieren) |
+
+Der Block **Status** zeigt beim Öffnen der Instanz Verbindung, Anzahl der verbundenen Mäher, Token-Ablauf, letzte erfolgreiche Anfrage und gegebenenfalls den letzten Fehler.
 
 ### Variablen
 
 | Variable | Inhalt |
 |---|---|
-| Verbindungsstatus | Nicht angemeldet, Verbunden, Gestört, Deaktiviert, Anmeldung fehlgeschlagen |
+| Verbindungsstatus | Nicht angemeldet, Verbunden, Gestört, Deaktiviert, Anmeldung fehlgeschlagen, Hinweis nicht bestätigt |
 | Token gültig bis | Ablaufzeit des aktuellen Access-Tokens |
 | Letzte erfolgreiche Anfrage | Zeitpunkt der letzten erfolgreichen Cloudanfrage |
-| Letzter Fehler | Zeitpunkt und Text der letzten Störung |
+| Letzter Fehler | Zeitpunkt und Text der letzten Störung; wird geleert, sobald die Verbindung wieder funktioniert |
 
 Access-Token, Refresh-Token und Client-Secret werden nur intern als Attribute gespeichert.
 
@@ -163,9 +170,10 @@ Access-Token, Refresh-Token und Client-Secret werden nur intern als Attribute ge
 | Code | Bedeutung |
 |---:|---|
 | 102 | aktiv |
-| 104 | Cloud-Verbindung deaktiviert |
+| 104 | Instanz deaktiviert |
 | 200 | Client-ID oder Client-Secret fehlt |
 | 201 | Anmeldung fehlgeschlagen, neuer Versuch alle 10 Minuten |
+| 202 | Nutzungshinweis noch nicht bestätigt |
 
 Vorübergehende Störungen wie Timeouts oder HTTP 5xx ändern den Instanzstatus nicht, damit die Mäher-Instanzen weiter abrufen und sich selbst erholen können.
 
@@ -190,9 +198,11 @@ Bereits angelegte Mäher sind mit ihrer Instanz verknüpft. Instanzen, deren Dev
 |---|---|---|
 | Device ID | vom Konfigurator gesetzt; leer = erster Mäher des Kontos | leer |
 | Abfrageintervall | zyklische Aktualisierung, mindestens 30 Sekunden | 60 |
-| Abruf aktiv | für Wartung, Transport oder Einwinterung ausschalten | an |
+| Instanz aktiv | für Wartung, Transport oder Einwinterung ausschalten | an |
+| Dashboard-Kachel (HTML) aktiv | legt die HTML-Variable an oder entfernt sie | an |
 | Schreibbefehle freigeben | erlaubt reale Steuerbefehle | aus |
-| Dashboard-Kachel anlegen | legt die HTML-Variable an oder entfernt sie | an |
+
+Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit Nickname, Modell und Device-ID, Systemzustand, Diagnose, letzte Aktualisierung, letzten Befehl und ob Schreibbefehle freigegeben sind.
 
 ### Objektbaum
 
@@ -256,7 +266,7 @@ Der Betriebsstatus wird aus dem API-Rohstatus abgeleitet. Ist ein Rohwert nicht 
 | 200 | Abfrageintervall ungültig |
 | 201 | API- oder Cloudfehler, Details in **Diagnose** |
 | 202 | Mäher im Mammotion-Konto nicht gefunden |
-| 203 | Cloud-Instanz nicht verbunden oder nicht aktiv |
+| 203 | Cloud-Instanz nicht verbunden, nicht aktiv oder Nutzungshinweis nicht bestätigt |
 
 ### Steuerung
 
@@ -265,9 +275,10 @@ Die Variable **Steuerung** bietet Pause, Fortsetzen, Stop, Zur Ladestation und H
 Schreibbefehle benötigen:
 
 ```text
-Cloud-Verbindung aktiv = Ja   (Cloud-Instanz)
-Abruf aktiv = Ja              (Mäher-Instanz)
-Schreibbefehle freigeben = Ja (Mäher-Instanz)
+Nutzungshinweis bestätigt = Ja (Cloud-Instanz)
+Instanz aktiv = Ja             (Cloud-Instanz)
+Instanz aktiv = Ja             (Mäher-Instanz)
+Schreibbefehle freigeben = Ja  (Mäher-Instanz)
 ```
 
 Das Ergebnis steht in **Letzter Befehl**. Fünf Sekunden nach einem Befehl wird der Status automatisch neu gelesen.
@@ -349,7 +360,7 @@ Ein Abruf sperrt weitere Abrufe derselben Instanz. Bleibt die Sperre durch einen
 - Schreibbefehle sind standardmäßig gesperrt und erst nach erfolgreichem Test freizugeben.
 - Vor realen Steuerbefehlen sicherstellen, dass der Arbeitsbereich frei ist.
 - Nur vertrauenswürdigen Personen Zugriff auf die Visualisierung geben.
-- Für Wartung, Transport oder Einwinterung **Abruf aktiv** ausschalten.
+- Für Wartung, Transport oder Einwinterung **Instanz aktiv** in der Mäher-Instanz ausschalten.
 - Das Modul ersetzt keine Sicherheitsfunktionen des Mähroboters.
 
 ## Fehlerbehebung
@@ -369,7 +380,7 @@ Client-ID und Client-Secret prüfen und **Übernehmen** drücken. Danach **Token
 
 ### Mäher: Status 203
 
-Die Mäher-Instanz ist nicht mit einer aktiven Cloud-Instanz verbunden. Über **Gateway ändern** die richtige Cloud-Instanz wählen oder die Cloud-Instanz aktivieren.
+Die Mäher-Instanz ist nicht mit einer aktiven Cloud-Instanz verbunden. Prüfen, ob in der Cloud-Instanz der Nutzungshinweis bestätigt und **Instanz aktiv** eingeschaltet ist. Über **Gateway ändern** lässt sich die richtige Cloud-Instanz wählen.
 
 ### Mäher: Teilweise verfügbar
 
@@ -381,7 +392,7 @@ Mäher einschalten, WLAN oder Mobilfunk prüfen. Im Energiesparzustand meldet di
 
 ### Steuerbefehle werden abgelehnt
 
-**Schreibbefehle freigeben**, **Abruf aktiv** und **Online** prüfen. Die Antwort steht in **Letzter Befehl**.
+**Schreibbefehle freigeben**, **Instanz aktiv** und **Online** prüfen. Die Antwort steht in **Letzter Befehl**.
 
 ### Detaillierte Analyse
 
@@ -404,6 +415,10 @@ Skripte mit `MAMMO_Pause`, `MAMMO_StartTask` usw. funktionieren weiter, die Inst
 - Die Work-Report-Endpunkte waren während der Entwicklung nicht zuverlässig nutzbar. Mähhistorie und Flächenstatistiken fehlen daher noch.
 - **Aufgabe starten** sendet den Aufgabennamen (`taskName`). Die Aufgaben-ID wird mitgespeichert und kann genutzt werden, sobald die API-Dokumentation das bestätigt.
 - Die Zuordnung des Betriebsstatus beruht auf den bisher beobachteten Rohwerten.
+
+## Nutzungshinweis
+
+Privates, inoffizielles Projekt – nicht von Mammotion. Das Modul nutzt die Mammotion Open API mit dem eigenen Entwicklerzugang. Mammotion kann die API jederzeit ändern oder einschränken. Steuerbefehle bewegen einen realen Mähroboter. Die Nutzung erfolgt auf eigene Verantwortung. Der Hinweis wird in der Cloud-Instanz einmalig bestätigt.
 
 ## Lizenz
 

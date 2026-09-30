@@ -11,10 +11,12 @@ declare(strict_types=1);
  */
 class MammotionCloud extends IPSModule
 {
-    private const MODULE_VERSION = '2.0';
+    private const MODULE_VERSION = '2.1';
+    private const MODULE_BUILD = 2;
     private const AUTH_URL = 'https://id.mammotion.com/oauth2/token';
     private const API_URL = 'https://api-open.mammotion.com';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
+    private const MOWER_MODULE = '{8297B983-0C40-4D50-8376-636028226AEE}';
 
     private const TOKEN_SAFETY_SECONDS = 300;
     private const RECONNECT_SECONDS = 600;
@@ -28,11 +30,13 @@ class MammotionCloud extends IPSModule
     private const STATE_DISTURBED = 2;
     private const STATE_DISABLED = 3;
     private const STATE_ERROR = 4;
+    private const STATE_NOTICE = 5;
 
     private const STATUS_ACTIVE = 102;
     private const STATUS_INACTIVE = 104;
     private const STATUS_CONFIG = 200;
     private const STATUS_AUTH = 201;
+    private const STATUS_NOTICE = 202;
 
     public function Create(): void
     {
@@ -41,6 +45,7 @@ class MammotionCloud extends IPSModule
         $this->RegisterPropertyString('ClientID', '');
         $this->RegisterPropertyString('ClientSecret', '');
         $this->RegisterPropertyBoolean('Active', true);
+        $this->RegisterPropertyBoolean('NoticeAccepted', false);
 
         $this->RegisterAttributeString('AccessToken', '');
         $this->RegisterAttributeString('RefreshToken', '');
@@ -152,6 +157,67 @@ class MammotionCloud extends IPSModule
         }
     }
 
+    public function GetConfigurationForm(): string
+    {
+        $form = json_decode((string) file_get_contents(__DIR__ . '/form.json'), true);
+        $lines = [];
+
+        if (!$this->ReadPropertyBoolean('Active')) {
+            $lines[] = 'Cloud: ⏸ Instanz ist deaktiviert';
+        } elseif (!$this->ReadPropertyBoolean('NoticeAccepted')) {
+            $lines[] = 'Cloud: ⚠️ Nutzungshinweis noch nicht bestätigt – es werden keine Anfragen gesendet';
+        } elseif (!$this->HasCredentials()) {
+            $lines[] = 'Cloud: ⚠️ Client-ID oder Client-Secret fehlt';
+        } else {
+            $state = (int) $this->GetValue('CloudState');
+            $texts = [
+                self::STATE_NOT_LOGGED_IN => '⏳ noch nicht angemeldet – erste Anfrage folgt mit dem nächsten Abruf',
+                self::STATE_CONNECTED     => '✅ verbunden',
+                self::STATE_DISTURBED     => '⚠️ gestört – vorübergehender Fehler, Mäher wiederholen selbstständig',
+                self::STATE_ERROR         => '❌ Anmeldung fehlgeschlagen – neuer Versuch alle 10 Minuten'
+            ];
+            $lines[] = 'Cloud: ' . ($texts[$state] ?? '❔ unbekannt');
+            $mowers = count(array_filter(IPS_GetInstanceListByModuleID(self::MOWER_MODULE), function ($id) {
+                return IPS_GetInstance($id)['ConnectionID'] === $this->InstanceID;
+            }));
+            $lines[] = 'Verbundene Mäher-Instanzen: ' . $mowers;
+        }
+        $validUntil = $this->ReadAttributeInteger('TokenValidUntil');
+        $lines[] = 'Token: ' . ($validUntil > time() ? '🔒 gültig bis ' . date('d.m.Y H:i', $validUntil) : '— kein gültiger Token');
+        $lastRequest = (int) $this->GetValue('LastRequest');
+        $lines[] = 'Letzte erfolgreiche Anfrage: ' . ($lastRequest > 0 ? date('d.m.Y H:i:s', $lastRequest) : '—');
+        $lastError = (string) $this->GetValue('LastError');
+        if ($lastError !== '') {
+            $lines[] = 'Letzter Fehler: ' . $lastError;
+        }
+
+        $this->FillPanel($form['elements'], 'StatusPanel', $lines);
+        $this->ReplaceCaption($form['actions'], 'VersionLabel', 'Mammotion Open API v' . self::MODULE_VERSION . ' (Build ' . self::MODULE_BUILD . '). Mäher über den „Mammotion Konfigurator“ anlegen.');
+        return (string) json_encode($form, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
+    private function FillPanel(array &$elements, string $name, array $lines): void
+    {
+        foreach ($elements as &$element) {
+            if (($element['name'] ?? '') === $name) {
+                $element['items'] = array_map(function ($line) {
+                    return ['type' => 'Label', 'caption' => $line];
+                }, $lines);
+            }
+        }
+        unset($element);
+    }
+
+    private function ReplaceCaption(array &$elements, string $name, string $caption): void
+    {
+        foreach ($elements as &$element) {
+            if (($element['name'] ?? '') === $name) {
+                $element['caption'] = $caption;
+            }
+        }
+        unset($element);
+    }
+
     // ------------------------------------------------------------------
     // Initialisierung und Zustand
     // ------------------------------------------------------------------
@@ -163,6 +229,12 @@ class MammotionCloud extends IPSModule
         if (!$this->ReadPropertyBoolean('Active')) {
             $this->SetValue('CloudState', self::STATE_DISABLED);
             $this->SetStatus(self::STATUS_INACTIVE);
+            return;
+        }
+
+        if (!$this->ReadPropertyBoolean('NoticeAccepted')) {
+            $this->SetValue('CloudState', self::STATE_NOTICE);
+            $this->SetStatus(self::STATUS_NOTICE);
             return;
         }
 
@@ -180,13 +252,14 @@ class MammotionCloud extends IPSModule
         }
 
         $this->SetStatus(self::STATUS_ACTIVE);
+        $this->SetValue('LastError', '');
         $this->SetValue('CloudState', $this->HasValidToken() ? self::STATE_CONNECTED : self::STATE_NOT_LOGGED_IN);
         $this->SetValue('TokenValidUntil', $this->ReadAttributeInteger('TokenValidUntil'));
     }
 
     private function TryReconnect(): void
     {
-        if (!$this->ReadPropertyBoolean('Active') || !$this->HasCredentials()) {
+        if (!$this->ReadPropertyBoolean('Active') || !$this->ReadPropertyBoolean('NoticeAccepted') || !$this->HasCredentials()) {
             $this->SetTimerInterval('ReconnectTimer', 0);
             return;
         }
@@ -201,7 +274,10 @@ class MammotionCloud extends IPSModule
     private function RequireReady(): void
     {
         if (!$this->ReadPropertyBoolean('Active')) {
-            throw new MammotionCloudException('Cloud-Verbindung ist deaktiviert', MammotionCloudException::DISABLED);
+            throw new MammotionCloudException('Cloud-Instanz ist deaktiviert', MammotionCloudException::DISABLED);
+        }
+        if (!$this->ReadPropertyBoolean('NoticeAccepted')) {
+            throw new MammotionCloudException('Nutzungshinweis in der Cloud-Instanz ist noch nicht bestätigt', MammotionCloudException::DISABLED);
         }
         if (!$this->HasCredentials()) {
             throw new MammotionCloudException('Client-ID oder Client-Secret fehlt', MammotionCloudException::AUTH);
@@ -221,6 +297,10 @@ class MammotionCloud extends IPSModule
 
     private function RegisterSuccess(): void
     {
+        if ($this->GetValue('CloudState') !== self::STATE_CONNECTED && $this->GetValue('LastError') !== '') {
+            // Verbindung hat sich erholt: alte Fehlermeldung entfernen
+            $this->SetValue('LastError', '');
+        }
         $this->SetValue('CloudState', self::STATE_CONNECTED);
         $this->SetValue('LastRequest', time());
         if ($this->GetStatus() !== self::STATUS_ACTIVE) {
@@ -448,7 +528,8 @@ class MammotionCloud extends IPSModule
             [self::STATE_CONNECTED, 'Verbunden', 0x00AA00],
             [self::STATE_DISTURBED, 'Gestört', 0xFF8800],
             [self::STATE_DISABLED, 'Deaktiviert', 0x777777],
-            [self::STATE_ERROR, 'Anmeldung fehlgeschlagen', 0xFF0000]
+            [self::STATE_ERROR, 'Anmeldung fehlgeschlagen', 0xFF0000],
+            [self::STATE_NOTICE, 'Hinweis nicht bestätigt', 0xFFCC00]
         ] as $a) {
             IPS_SetVariableProfileAssociation(self::PROFILE_STATE, $a[0], $a[1], '', $a[2]);
         }

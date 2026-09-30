@@ -1,25 +1,63 @@
 {
   "elements": [
     {
-      "type": "Label",
-      "caption": "Zugangsdaten der Open-API-Anwendung aus dem Mammotion Developer Portal."
-    },
-    {
-      "type": "ValidationTextBox",
-      "name": "ClientID",
-      "caption": "Client ID",
-      "width": "400px"
-    },
-    {
-      "type": "PasswordTextBox",
-      "name": "ClientSecret",
-      "caption": "Client Secret",
-      "width": "400px"
+      "type": "ExpansionPanel",
+      "caption": "Nutzungshinweis",
+      "expanded": true,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Privates, inoffizielles Projekt – nicht von Mammotion."
+        },
+        {
+          "type": "Label",
+          "caption": "Nutzt die Mammotion Open API mit deinem eigenen Entwicklerzugang. Mammotion kann die API jederzeit ändern oder einschränken."
+        },
+        {
+          "type": "Label",
+          "caption": "Steuerbefehle bewegen einen realen Mähroboter. Vor jedem Befehl sicherstellen, dass sich keine Personen, Tiere oder Gegenstände im Arbeitsbereich befinden."
+        },
+        {
+          "type": "CheckBox",
+          "name": "NoticeAccepted",
+          "caption": "Gelesen – Nutzung auf eigene Verantwortung"
+        }
+      ]
     },
     {
       "type": "CheckBox",
       "name": "Active",
-      "caption": "Cloud-Verbindung aktiv"
+      "caption": "Instanz aktiv"
+    },
+    {
+      "type": "ExpansionPanel",
+      "name": "StatusPanel",
+      "caption": "Status",
+      "expanded": true,
+      "items": []
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Zugangsdaten",
+      "expanded": true,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Client-ID und Client-Secret der Open-API-Anwendung aus dem Mammotion Developer Portal."
+        },
+        {
+          "type": "ValidationTextBox",
+          "name": "ClientID",
+          "caption": "Client ID",
+          "width": "400px"
+        },
+        {
+          "type": "PasswordTextBox",
+          "name": "ClientSecret",
+          "caption": "Client Secret",
+          "width": "400px"
+        }
+      ]
     }
   ],
   "actions": [
@@ -35,13 +73,15 @@
     },
     {
       "type": "Label",
-      "caption": "Mammotion Open API v2.0 (Build 1). Mäher über den Konfigurator \"Mammotion Konfigurator\" anlegen."
+      "name": "VersionLabel",
+      "caption": "Mammotion Open API"
     }
   ],
   "status": [
-    { "code": 102, "icon": "active", "caption": "Aktiv" },
-    { "code": 104, "icon": "inactive", "caption": "Cloud-Verbindung deaktiviert" },
+    { "code": 102, "icon": "active", "caption": "Verbunden" },
+    { "code": 104, "icon": "inactive", "caption": "Instanz deaktiviert" },
     { "code": 200, "icon": "error", "caption": "Client-ID oder Client-Secret fehlt" },
-    { "code": 201, "icon": "error", "caption": "Anmeldung fehlgeschlagen, neuer Versuch alle 10 Minuten" }
+    { "code": 201, "icon": "error", "caption": "Anmeldung fehlgeschlagen, neuer Versuch alle 10 Minuten" },
+    { "code": 202, "icon": "inactive", "caption": "Nutzungshinweis noch nicht bestätigt" }
   ]
 }

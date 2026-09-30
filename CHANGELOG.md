@@ -2,6 +2,30 @@
 
 Alle relevanten Änderungen werden in dieser Datei dokumentiert.
 
+## [2.1] - 2026-09-30
+
+Build 2.
+
+### Hinzugefügt
+
+- **Nutzungshinweis** in der Cloud-Instanz mit Schalter „Gelesen – Nutzung auf eigene Verantwortung“. Solange er nicht bestätigt ist, sendet das Modul keine Anfragen (Cloud-Status 202).
+- Schalter **Instanz aktiv** in Cloud- und Mäher-Instanz
+- Status-Block in Cloud- und Mäher-Instanz mit Verbindung, Token, Mäher, Systemzustand, Diagnose und letztem Befehl
+- eigenes Profil `MAMMO.Online` (Online/Offline) statt `~Switch`
+
+### Geändert
+
+- Konfigurator legt neue Mäher als „Mähroboter“ an (bei mehreren Mähern „Mähroboter <Nickname>“)
+- Formulare der Mäher-Instanz in Einstellungen und Steuerung gegliedert, Dashboard-Schalter heißt „Dashboard-Kachel (HTML) aktiv“
+
+### Korrigiert
+
+- „Letzter Fehler“ der Cloud wird geleert, sobald die Verbindung wieder funktioniert oder die Konfiguration übernommen wird
+
+### Hinweis zum Update
+
+Nach dem Update ist die Cloud-Instanz gestoppt, bis der Nutzungshinweis einmal bestätigt und **Übernehmen** gedrückt wurde.
+
 ## [2.0] - 2026-09-30
 
 Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit 0.x/1.x-Instanzen (neue Modul-GUIDs).

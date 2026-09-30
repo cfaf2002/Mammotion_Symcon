@@ -57,6 +57,7 @@ class MammotionConfigurator extends IPSModule
         }
 
         $values = [];
+        $multiple = count($mowers) > 1;
         foreach ($mowers as $mower) {
             $deviceID = (string) ($mower['id'] ?? '');
             if ($deviceID === '') {
@@ -80,7 +81,7 @@ class MammotionConfigurator extends IPSModule
                 'create'     => [
                     'moduleID'      => self::MOWER_MODULE,
                     'configuration' => ['DeviceID' => $deviceID],
-                    'name'          => $title
+                    'name'          => $multiple ? 'Mähroboter ' . $title : 'Mähroboter'
                 ]
             ];
         }

@@ -10,11 +10,13 @@ declare(strict_types=1);
  */
 class MammotionMower extends IPSModule
 {
-    private const MODULE_VERSION = '2.0';
+    private const MODULE_VERSION = '2.1';
+    private const MODULE_BUILD = 2;
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
 
     private const PROFILE_OPERATION = 'MAMMO.OperationStatus';
+    private const PROFILE_ONLINE = 'MAMMO.Online';
     private const PROFILE_SYSTEM = 'MAMMO.SystemState';
     private const PROFILE_CONTROL = 'MAMMO.Control';
     private const PROFILE_MM = 'MAMMO.Millimeter';
@@ -182,7 +184,7 @@ class MammotionMower extends IPSModule
     public function RefreshWithResult(): string
     {
         if (!$this->ReadPropertyBoolean('Active')) {
-            return 'DEAKTIVIERT: Abruf ist für diesen Mäher ausgeschaltet.';
+            return 'DEAKTIVIERT: Instanz ist deaktiviert.';
         }
         $ok = $this->Refresh();
         if ($this->ReadAttributeInteger('RetryAttempt') > 0) {
@@ -220,6 +222,67 @@ class MammotionMower extends IPSModule
         return (string) json_encode(array_values($map), JSON_UNESCAPED_UNICODE);
     }
 
+    public function GetConfigurationForm(): string
+    {
+        $form = json_decode((string) file_get_contents(__DIR__ . '/form.json'), true);
+        $lines = [];
+
+        $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
+        if ($parentID <= 0) {
+            $lines[] = 'Cloud: ❌ keine Cloud-Instanz verbunden – über „Gateway ändern“ zuordnen';
+        } else {
+            $parentStatus = IPS_GetInstance($parentID)['InstanceStatus'];
+            $cloudTexts = [
+                102 => '✅ verbunden',
+                104 => '⏸ Cloud-Instanz ist deaktiviert',
+                200 => '⚠️ Client-ID oder Client-Secret fehlt',
+                201 => '❌ Anmeldung fehlgeschlagen',
+                202 => '⚠️ Nutzungshinweis in der Cloud-Instanz noch nicht bestätigt'
+            ];
+            $lines[] = 'Cloud: ' . ($cloudTexts[$parentStatus] ?? '❔ Status ' . $parentStatus) . ' – ' . IPS_GetName($parentID) . ' (#' . $parentID . ')';
+        }
+
+        $model = $this->ReadAttributeString('DeviceModel');
+        $nickname = $this->ReadAttributeString('DeviceNickname');
+        $deviceID = $this->ReadAttributeString('ResolvedDeviceID');
+        if ($deviceID !== '') {
+            $name = trim(($nickname !== '' ? $nickname : $this->ReadAttributeString('DeviceApiName')) . ($model !== '' ? ' – ' . $model : ''));
+            $lines[] = 'Mäher: ' . ($this->GetValue('Online') ? '🟢 online' : '⚪ offline') . ' – ' . ($name !== '' ? $name . ' ' : '') . '(' . $deviceID . ')';
+        } else {
+            $lines[] = 'Mäher: ⏳ noch nicht ermittelt – erster Abruf folgt';
+        }
+
+        $systemTexts = ['⏳ Initialisierung', '🔄 Prüfung läuft', '✅ Betriebsbereit', '⚠️ Teilweise verfügbar', '⚪ Offline', '❌ Fehler', '⏸ Deaktiviert'];
+        $lines[] = 'Systemzustand: ' . ($systemTexts[(int) $this->GetValue('SystemState')] ?? '❔');
+        $diagnostic = (string) $this->GetValue('Diagnostic');
+        if ($diagnostic !== '') {
+            $lines[] = 'Diagnose: ' . $diagnostic;
+        }
+        $lastSuccess = (int) $this->GetValue('LastSuccess');
+        $lines[] = 'Letzte erfolgreiche Aktualisierung: ' . ($lastSuccess > 0 ? date('d.m.Y H:i:s', $lastSuccess) : '—');
+        $lastCommand = (string) $this->GetValue('LastCommand');
+        if ($lastCommand !== '') {
+            $lines[] = 'Letzter Befehl: ' . $lastCommand;
+        }
+        $lines[] = 'Schreibbefehle: ' . ($this->ReadPropertyBoolean('EnableControl') ? '🔓 freigegeben' : '🔒 gesperrt');
+
+        foreach ($form['elements'] as &$element) {
+            if (($element['name'] ?? '') === 'StatusPanel') {
+                $element['items'] = array_map(function ($line) {
+                    return ['type' => 'Label', 'caption' => $line];
+                }, $lines);
+            }
+        }
+        unset($element);
+        foreach ($form['actions'] as &$action) {
+            if (($action['name'] ?? '') === 'VersionLabel') {
+                $action['caption'] = 'Mammotion Open API v' . self::MODULE_VERSION . ' (Build ' . self::MODULE_BUILD . '). Zugangsdaten und Nutzungshinweis werden in der übergeordneten Instanz „Mammotion Cloud“ gepflegt.';
+            }
+        }
+        unset($action);
+        return (string) json_encode($form, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    }
+
     // ------------------------------------------------------------------
     // Initialisierung
     // ------------------------------------------------------------------
@@ -231,7 +294,7 @@ class MammotionMower extends IPSModule
         if (!$this->ReadPropertyBoolean('Active')) {
             $this->SetTimerInterval('UpdateTimer', 0);
             $this->SetValue('SystemState', self::SYS_DISABLED);
-            $this->SetValue('Diagnostic', 'Abruf für diesen Mäher ist ausgeschaltet');
+            $this->SetValue('Diagnostic', 'Instanz ist deaktiviert');
             $this->SetStatus(self::STATUS_INACTIVE);
             $this->UpdateDashboard();
             return;
@@ -446,7 +509,7 @@ class MammotionMower extends IPSModule
     private function SendCommand(string $action, ?array $params = null): bool
     {
         if (!$this->ReadPropertyBoolean('Active')) {
-            throw new RuntimeException('Abruf für diesen Mäher ist ausgeschaltet.');
+            throw new RuntimeException('Instanz ist deaktiviert.');
         }
         if (!$this->ReadPropertyBoolean('EnableControl')) {
             throw new RuntimeException('Schreibbefehle sind nicht freigegeben.');
@@ -577,7 +640,7 @@ class MammotionMower extends IPSModule
     {
         $vars = [
             ['Dashboard', 'Dashboard', VARIABLETYPE_STRING, '~HTMLBox', 5, $this->ReadPropertyBoolean('ShowDashboard')],
-            ['Online', 'Online', VARIABLETYPE_BOOLEAN, '~Switch', 10, true],
+            ['Online', 'Online', VARIABLETYPE_BOOLEAN, self::PROFILE_ONLINE, 10, true],
             ['OperationStatus', 'Betriebsstatus', VARIABLETYPE_INTEGER, self::PROFILE_OPERATION, 20, true],
             ['Status', 'Status (Rohwert)', VARIABLETYPE_STRING, '', 21, true],
             ['Battery', 'Akku', VARIABLETYPE_INTEGER, '~Battery.100', 30, true],
@@ -610,6 +673,12 @@ class MammotionMower extends IPSModule
 
     private function EnsureProfiles(): void
     {
+        if (!IPS_VariableProfileExists(self::PROFILE_ONLINE)) {
+            IPS_CreateVariableProfile(self::PROFILE_ONLINE, VARIABLETYPE_BOOLEAN);
+            IPS_SetVariableProfileIcon(self::PROFILE_ONLINE, 'Network');
+        }
+        IPS_SetVariableProfileAssociation(self::PROFILE_ONLINE, 0, 'Offline', '', 0x808080);
+        IPS_SetVariableProfileAssociation(self::PROFILE_ONLINE, 1, 'Online', '', 0x00AA00);
         $this->EnsureIntegerProfile(self::PROFILE_OPERATION, 'Information', '', [
             [self::OP_OFFLINE, 'Offline', 0x808080], [self::OP_READY, 'Bereit', 0x00AA00],
             [self::OP_MOWING, 'Mäht', 0x00CC66], [self::OP_PAUSED, 'Pausiert', 0xFFCC00],
@@ -691,7 +760,7 @@ class MammotionMower extends IPSModule
         [$status, $accent, $badge] = $states[$operation] ?? $states[self::OP_UNKNOWN];
 
         if (!$active || $system === self::SYS_DISABLED) {
-            [$status, $accent, $badge] = ['Abruf deaktiviert', '#64748b', 'DEAKTIVIERT'];
+            [$status, $accent, $badge] = ['Instanz deaktiviert', '#64748b', 'DEAKTIVIERT'];
         } elseif ($system === self::SYS_INIT && $lastSuccess === 0) {
             [$status, $accent, $badge] = ['Wird initialisiert', '#94a3b8', 'START'];
         } elseif ($system === self::SYS_ERROR && $operation !== self::OP_CLOUD_ERROR) {
