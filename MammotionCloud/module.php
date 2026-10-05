@@ -95,7 +95,7 @@ class MammotionCloud extends IPSModuleStrict
         $this->Initialize();
     }
 
-    public function MessageSink(int $TimeStamp, int $SenderID, int $Message, array $Data)
+    public function MessageSink(int $TimeStamp, int $SenderID, int $Message, array $Data): void
     {
         if ($Message === IPS_KERNELSTARTED) {
             $this->Initialize();

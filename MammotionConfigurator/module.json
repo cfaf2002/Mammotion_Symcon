@@ -3,9 +3,16 @@
   "name": "MammotionConfigurator",
   "type": 4,
   "vendor": "Mammotion",
-  "aliases": ["Mammotion Konfigurator"],
-  "parentRequirements": ["{5F140107-E29A-41AA-9314-01891DDE02F9}"],
+  "aliases": [
+    "Mammotion Konfigurator"
+  ],
+  "url": "https://github.com/cfaf2002/MammotionOpenAPI/blob/main/README.md#mammotion-konfigurator",
+  "parentRequirements": [
+    "{5F140107-E29A-41AA-9314-01891DDE02F9}"
+  ],
   "childRequirements": [],
-  "implemented": ["{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"],
+  "implemented": [
+    "{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"
+  ],
   "prefix": "MAMCONF"
 }

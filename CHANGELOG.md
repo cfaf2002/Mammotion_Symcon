@@ -14,6 +14,8 @@ Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen frühe
 - Profile früherer Versionen werden einmalig entfernt, sofern unbenutzt
 - PHP 8.5: veraltetes `curl_close()` entfernt
 - gemeinsamer Helfer `libs/PresentationHelper.php`
+- Signaturen gegen die offiziellen Symcon-Stubs (`ModuleStrictStubs.php`) geprüft, u. a. `MessageSink(...): void`
+- `module.json` aller Module um das vom Symcon-Validator geforderte Feld `url` ergänzt
 
 ### Geschwindigkeit
 

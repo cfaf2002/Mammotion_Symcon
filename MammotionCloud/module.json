@@ -3,9 +3,17 @@
   "name": "MammotionCloud",
   "type": 1,
   "vendor": "Mammotion",
-  "aliases": ["Mammotion Cloud", "Mammotion Open API Cloud"],
+  "aliases": [
+    "Mammotion Cloud",
+    "Mammotion Open API Cloud"
+  ],
+  "url": "https://github.com/cfaf2002/MammotionOpenAPI/blob/main/README.md#mammotion-cloud",
   "parentRequirements": [],
-  "childRequirements": ["{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"],
-  "implemented": ["{5F140107-E29A-41AA-9314-01891DDE02F9}"],
+  "childRequirements": [
+    "{3F096DBB-4BC5-48C7-B870-4ECAC03C8A06}"
+  ],
+  "implemented": [
+    "{5F140107-E29A-41AA-9314-01891DDE02F9}"
+  ],
   "prefix": "MAMCLOUD"
 }
