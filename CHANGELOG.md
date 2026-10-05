@@ -2,9 +2,35 @@
 
 Alle relevanten Änderungen werden in dieser Datei dokumentiert.
 
-## [1.0] - 2026-09-30
+## [1.0] - 2026-10-05
 
 Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen früherer Versionen (neue Modul-GUIDs).
+
+### Technik IP-Symcon 9.0
+
+- alle Module auf die Basisklasse `IPSModuleStrict` umgestellt (typisierte Signaturen, Datenfluss über `GetCompatibleParents()` statt `ConnectParent`)
+- Variablen-Darstellungen statt Profilen: Wertanzeige mit Intervallen für Statuscodes und Einheiten (inklusive Umrechnung m²/ha, min/h, Wh/kWh, kg/t), Aufzählung für Steuerung und Aufgaben, Datum/Uhrzeit für Zeitstempel
+- Aufgabenliste direkt in der Darstellung der Variable, kein Profil je Instanz mehr
+- Profile früherer Versionen werden einmalig entfernt, sofern unbenutzt
+- PHP 8.5: veraltetes `curl_close()` entfernt
+- gemeinsamer Helfer `libs/PresentationHelper.php`
+
+### Geschwindigkeit
+
+- ein API-Aufruf je Abruf statt zwei (Geräteliste nur noch zur Ermittlung der Device-ID oder bei Fehlern)
+- flüchtige Zustände im Buffer statt in Attributen, Attribute nur bei Änderung: im Normalbetrieb keine Schreibzugriffe auf die Einstellungen
+- Kachel-Updates nur bei geändertem Inhalt
+- komprimierte HTTP-Antworten
+
+### Sicherheit
+
+- TLS-Prüfung explizit, nur HTTPS, keine Weiterleitungen, Antwortgröße begrenzt
+- strengere Prüfung der weitergeleiteten API-Pfade
+- Gerätebild nur über HTTPS, Kachel-Hintergrund nur als Rasterbild (kein SVG)
+
+### Lizenz
+
+- SPDX-Kennzeichner in allen Quelldateien, Lizenz- und Fremdbestandteile in der README dokumentiert
 
 ### Neue Struktur
 

@@ -1,20 +1,27 @@
 # Mammotion Open API für IP-Symcon
 
-[![Version](https://img.shields.io/badge/version-1.0-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
-[![Build](https://img.shields.io/badge/build-1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI)
+[![Version](https://img.shields.io/badge/Version-1.0-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI/blob/main/CHANGELOG.md)
+[![Build](https://img.shields.io/badge/Build-1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI/blob/main/library.json)
 [![IP-Symcon](https://img.shields.io/badge/IP--Symcon-9.0%2B-orange.svg)](https://www.symcon.de/)
-[![PHP](https://img.shields.io/badge/PHP-8.x-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/)
+[![PHP](https://img.shields.io/badge/PHP-8.5-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/releases/8.5/)
+[![Basisklasse](https://img.shields.io/badge/Basisklasse-IPSModuleStrict-informational.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/module/)
+[![Darstellungen](https://img.shields.io/badge/Variablen-Darstellungen-informational.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/darstellungen/)
+[![Kachel](https://img.shields.io/badge/Kachel--Visualisierung-HTML--SDK-informational.svg)](#kachel)
 [![Mammotion Open API](https://img.shields.io/badge/Mammotion-Open%20API-success.svg)](https://developer.mammotion.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow.svg)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/cfaf2002/MammotionOpenAPI.svg)](https://github.com/cfaf2002/MammotionOpenAPI/commits/main)
+[![Issues](https://img.shields.io/github/issues/cfaf2002/MammotionOpenAPI.svg)](https://github.com/cfaf2002/MammotionOpenAPI/issues)
 
 Integration von Mammotion-Mährobotern in IP-Symcon über die offizielle Mammotion Open API.
 
-Version **1.0** (Build 1) ist eine vollständige Neuentwicklung mit der für IP-Symcon üblichen Aufteilung in Cloud-, Geräte- und Konfigurator-Instanz sowie einer eigenen Kachel für die Kachel-Visualisierung. Sie ist **nicht** mit den Instanzen früherer Versionen kompatibel (neue Modul-GUIDs). Alte Instanzen vor der Installation löschen, siehe [Umstieg von früheren Versionen](#umstieg-von-früheren-versionen).
+Version **1.0** (Build 1) ist eine vollständige Neuentwicklung mit der für IP-Symcon üblichen Aufteilung in Cloud-, Geräte- und Konfigurator-Instanz sowie einer eigenen Kachel für die Kachel-Visualisierung. Sie nutzt die aktuelle Technik von IP-Symcon 9.0: die Basisklasse `IPSModuleStrict`, Variablen-Darstellungen statt Profilen und das HTML-SDK der Kachel-Visualisierung (siehe [Technik](#technik-ip-symcon-90)). Sie ist **nicht** mit den Instanzen früherer Versionen kompatibel (neue Modul-GUIDs). Alte Instanzen vor der Installation löschen, siehe [Umstieg von früheren Versionen](#umstieg-von-früheren-versionen).
 
 ## Inhaltsverzeichnis
 
 - [Aufbau](#aufbau)
 - [Funktionsumfang](#funktionsumfang)
+- [Technik (IP-Symcon 9.0)](#technik-ip-symcon-90)
+- [Geschwindigkeit](#geschwindigkeit)
 - [Voraussetzungen](#voraussetzungen)
 - [Projektstruktur](#projektstruktur)
 - [Installation](#installation)
@@ -40,7 +47,7 @@ Version **1.0** (Build 1) ist eine vollständige Neuentwicklung mit der für IP-
 Mammotion Cloud (I/O)            Anmeldung, Token, alle HTTP-Anfragen
 ├── Mammotion Konfigurator       listet die Mäher des Kontos und legt Instanzen an
 ├── Mähroboter                   Status, Werte, Steuerung, Kachel
-└── Mammotion Mäher "..."        weitere Mäher desselben Kontos
+└── Mähroboter <Name>            weitere Mäher desselben Kontos
 ```
 
 Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher desselben Kontos teilen sich einen Token. Mehrere Mammotion-Konten sind über mehrere Cloud-Instanzen möglich.
@@ -80,6 +87,32 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 - eigene Kachel mit Live-Status und Bedienung, in der Instanz aktivier- und deaktivierbar
 - sauberer Start nach einem Neustart von IP-Symcon
 
+## Technik (IP-Symcon 9.0)
+
+| Technik | Umsetzung im Modul |
+|---|---|
+| **`IPSModuleStrict`** | Alle drei Module nutzen die seit IP-Symcon 8.1 empfohlene Basisklasse mit strengen Typen. `IPSModule` soll laut Symcon für neue Module nicht mehr verwendet werden. Modulvariablen lassen sich damit nur noch vom Modul selbst schreiben. |
+| **Datenfluss über die Konsole** | Statt `ConnectParent` melden Mäher und Konfigurator über `GetCompatibleParents()`, dass sie an eine vorhandene oder neue Mammotion-Cloud-Instanz gehören. Die Verwaltungskonsole übernimmt das Verbinden. |
+| **Darstellungen statt Profile** | Alle Variablen nutzen Variablen-Darstellungen (Wertanzeige mit Intervallen für Statuscodes, Aufzählung für Bedienung, Datum/Uhrzeit für Zeitstempel). Es werden keine globalen Profile mehr angelegt. Große Werte werden automatisch umgerechnet (m² → ha, min → h, Wh → kWh, kg → t). |
+| **Aufgabenliste je Variable** | Die Aufgaben aus der Mammotion-App stehen direkt in der Darstellung der Variable **Aufgabe starten**. Das frühere Profil je Instanz entfällt. |
+| **HTML-SDK** | Die Mäher-Instanz ist selbst eine Kachel (`GetVisualizationTile`, `UpdateVisualizationValue`), siehe [Kachel](#kachel). |
+| **Timer über `RequestAction`** | Timer rufen `IPS_RequestAction` auf. Es gibt keine öffentlichen Hilfsfunktionen nur für Timer. |
+| **PHP 8.5** | IP-Symcon 9.0 nutzt PHP 8.5. Das ab PHP 8.5 veraltete `curl_close()` wird nicht mehr aufgerufen. |
+| **Kernel-Start** | Die Initialisierung wartet auf `IPS_KERNELSTARTED`. |
+
+Profile früherer Versionen (`MAMMO.*`, `MAMCLOUD.State`) werden nach dem Update einmalig gelöscht, sofern keine Variable sie mehr verwendet.
+
+## Geschwindigkeit
+
+| Maßnahme | Wirkung |
+|---|---|
+| Ein API-Aufruf je Abruf | Das Gerätedetail enthält Status, Online-Flag, Modell und Bild. Die Geräteliste wird nur zur Ermittlung der Device-ID oder bei einem Fehler abgefragt. Das halbiert die Anfragen gegenüber zwei Aufrufen je Minute. |
+| Zusatzdaten seltener | Aufgaben, Statistik, Verlauf und Fehler alle 15 Minuten, Einsatzdetails nur einmal je neuem Einsatz. |
+| Buffer statt Attribute | Sperre, Wiederholungen und Takt der Zusatzdaten liegen im Arbeitsspeicher (`SetBuffer`). Attribute werden sofort auf die Festplatte geschrieben und deshalb nur noch bei echten Änderungen geschrieben. Im Normalbetrieb schreibt ein Abruf kein einziges Attribut. |
+| Kachel nur bei Änderung | Die Kachel bekommt nur dann ein Update, wenn sich ihr Inhalt geändert hat. Das Hintergrundbild wird nur beim Öffnen übertragen. |
+| Komprimierte Antworten | HTTP-Antworten werden komprimiert angenommen. |
+| Ein Token je Konto | Alle Mäher eines Kontos teilen sich den Token der Cloud-Instanz, parallele Erneuerungen sind per Semaphore ausgeschlossen. |
+
 ## Voraussetzungen
 
 - IP-Symcon 9.0 oder neuer
@@ -99,6 +132,8 @@ MammotionOpenAPI/
 ├── LICENSE
 ├── README.md
 ├── library.json
+├── libs/
+│   └── PresentationHelper.php   gemeinsame Hilfen für Darstellungen
 ├── MammotionCloud/
 │   ├── form.json
 │   ├── module.json
@@ -109,6 +144,7 @@ MammotionOpenAPI/
 │   └── module.php
 └── MammotionMower/
     ├── form.json
+    ├── module.html               Kachel (HTML-SDK)
     ├── module.json
     └── module.php
 ```
@@ -210,7 +246,7 @@ Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit
 
 | Daten | Takt |
 |---|---|
-| Status, Akku, Ladestatus, Netz | im Abfrageintervall (Standard 60 Sekunden) |
+| Status, Akku, Ladestatus, Netz | im Abfrageintervall (Standard 60 Sekunden), ein API-Aufruf |
 | Aufgaben, Statistik, Einsatzverlauf, Fehlerprotokoll | alle 15 Minuten, nach Fehler nach 5 Minuten, 2 Minuten nach Ende eines Einsatzes und bei **Jetzt aktualisieren** sofort |
 | Details eines Einsatzes (Energie, Mähhöhe, Geschwindigkeit) | einmal je neuem Einsatz |
 
@@ -301,7 +337,7 @@ Der Betriebsstatus wird aus dem API-Rohstatus abgeleitet. Ist ein Rohwert nicht 
 
 ### Steuerung
 
-Die Variable **Steuerung** bietet Pause, Fortsetzen, Stop, Zur Ladestation und Heimfahrt abbrechen. **Aufgabe starten** enthält die in der Mammotion-App gespeicherten Aufgaben. Jeder Mäher hat ein eigenes Aufgabenprofil (`MAMMO.Tasks.<InstanzID>`), das beim Löschen der Instanz mit entfernt wird.
+Die Variable **Steuerung** bietet Pause, Fortsetzen, Stop, Zur Ladestation und Heimfahrt abbrechen. **Aufgabe starten** enthält die in der Mammotion-App gespeicherten Aufgaben. Sie stehen direkt in der Darstellung der Variable und werden aktualisiert, sobald sich die Aufgaben in der App ändern.
 
 Schreibbefehle benötigen:
 
@@ -442,6 +478,20 @@ Ein Abruf sperrt weitere Abrufe derselben Instanz. Bleibt die Sperre durch einen
 - Nur vertrauenswürdigen Personen Zugriff auf die Visualisierung geben.
 - Für Wartung, Transport oder Einwinterung **Instanz aktiv** in der Mäher-Instanz ausschalten.
 - Das Modul ersetzt keine Sicherheitsfunktionen des Mähroboters.
+- Client-Secret, Access- und Refresh-Token liegen, wie bei IP-Symcon üblich, in den Einstellungen der Instanz. Backups von IP-Symcon deshalb geschützt aufbewahren.
+
+**Technische Schutzmaßnahmen im Modul:**
+
+| Bereich | Schutz |
+|---|---|
+| Verbindung | nur HTTPS, Zertifikat und Hostname werden immer geprüft, keine Weiterleitungen, Antworten höchstens 5 MB |
+| Weiterleitung von Anfragen | die Cloud-Instanz leitet nur `GET` und `POST` auf `/v1/…` weiter, mit Prüfung auf erlaubte Zeichen und ohne `..` |
+| Arbeitsparameter | `GET /v1/mower/{deviceId}/work-params` wird nie aufgerufen (siehe [Sicherheitshinweis](#sicherheitshinweis-zu-den-arbeitsparametern)) |
+| Steuerung | Schreibbefehle standardmäßig gesperrt, nur bekannte Befehle und Aufgaben, Start und Fortsetzen in der Kachel mit Bestätigung |
+| Nutzungshinweis | ohne Bestätigung sendet die Cloud-Instanz keine Anfragen |
+| Kachel | alle Texte werden als Text eingefügt (kein HTML aus der Cloud), Gerätebild nur über HTTPS, Hintergrundbild nur JPG, PNG, WebP oder GIF (kein SVG) |
+| Variablen | mit `IPSModuleStrict` kann nur das Modul selbst seine Variablen schreiben |
+| Debug | Token und Client-Secret erscheinen nie im Debug |
 
 ## Fehlerbehebung
 
@@ -484,7 +534,7 @@ Version 1.0 (Build 1) verwendet neue Modul-GUIDs. Alte Instanzen werden nicht ü
 
 1. Client-ID, Client-Secret und Device-ID aus der alten Instanz notieren.
 2. Alte Mammotion-Instanz löschen.
-3. Optional die alten Profile `MAMMO.Tasks`, `MAMMO.Control`, `MAMMO.OperationStatus` und `MAMMO.SystemState` löschen. Sie werden bei Bedarf neu angelegt.
+3. Alte Profile (`MAMMO.*`, `MAMCLOUD.State`) muss niemand mehr von Hand löschen. Das Modul entfernt sie nach dem Update selbst, sofern keine Variable sie mehr verwendet.
 4. Modul in der Modulverwaltung aktualisieren oder neu hinzufügen.
 5. [Einrichtung](#einrichtung) durchführen.
 
@@ -503,7 +553,14 @@ Privates, inoffizielles Projekt – nicht von Mammotion. Das Modul nutzt die Mam
 
 ## Lizenz
 
-Dieses Projekt steht unter der [MIT-Lizenz](LICENSE). Hinweise zum Mitwirken stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE), Copyright (c) 2026 Armin Frohwerk. Jede Quelldatei trägt den Kennzeichner `SPDX-License-Identifier: MIT`. Hinweise zum Mitwirken stehen in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Fremdbestandteile:
+
+- Das Modul enthält keinen Code und keine Bibliotheken Dritter.
+- Die Symbole in der Kachel sind eigene SVG-Grafiken. Die Symbolnamen der Variablen-Darstellungen verweisen auf die Symbole, die IP-Symcon selbst mitbringt.
+- Das Gerätebild wird zur Laufzeit von der Mammotion-Cloud geladen und ist nicht Teil dieses Repositorys.
+- Die Badges werden von [shields.io](https://shields.io/) erzeugt.
 
 ## Haftung und Markenhinweis
 

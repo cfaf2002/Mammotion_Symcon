@@ -1,5 +1,8 @@
 <?php
 
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Armin Frohwerk
+
 declare(strict_types=1);
 
 /**
@@ -8,7 +11,7 @@ declare(strict_types=1);
  * Listet alle Mäher des über die Cloud-Instanz angemeldeten Mammotion-Kontos
  * und legt die zugehörigen Mäher-Instanzen per Klick an.
  */
-class MammotionConfigurator extends IPSModule
+class MammotionConfigurator extends IPSModuleStrict
 {
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const MOWER_MODULE = '{8297B983-0C40-4D50-8376-636028226AEE}';
@@ -17,7 +20,15 @@ class MammotionConfigurator extends IPSModule
     public function Create(): void
     {
         parent::Create();
-        $this->ConnectParent(self::CLOUD_MODULE);
+        // IPSModuleStrict: Die Verbindung zur Cloud-Instanz übernimmt die Verwaltungskonsole (siehe GetCompatibleParents)
+    }
+
+    /**
+     * IPSModuleStrict: Der Konfigurator nutzt eine vorhandene oder neue Mammotion-Cloud-Instanz.
+     */
+    public function GetCompatibleParents(): string
+    {
+        return (string) json_encode(['type' => 'connect', 'moduleIDs' => [self::CLOUD_MODULE]]);
     }
 
     public function ApplyChanges(): void
@@ -25,7 +36,7 @@ class MammotionConfigurator extends IPSModule
         parent::ApplyChanges();
     }
 
-    public function ReceiveData($JSONString): string
+    public function ReceiveData(string $JSONString): string
     {
         return '';
     }
@@ -114,7 +125,7 @@ class MammotionConfigurator extends IPSModule
     private function RequestMowers(): array
     {
         $raw = $this->SendDataToParent((string) json_encode(['DataID' => self::DATA_TX, 'Command' => 'GetMowers']));
-        $result = is_string($raw) ? json_decode($raw, true) : null;
+        $result = json_decode($raw, true);
         if (!is_array($result)) {
             throw new RuntimeException('Keine gültige Antwort der Cloud-Instanz');
         }

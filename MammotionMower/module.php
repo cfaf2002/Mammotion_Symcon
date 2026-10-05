@@ -1,6 +1,11 @@
 <?php
 
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Armin Frohwerk
+
 declare(strict_types=1);
+
+require_once __DIR__ . '/../libs/PresentationHelper.php';
 
 /**
  * Mammotion Mäher
@@ -8,28 +13,22 @@ declare(strict_types=1);
  * Eine Instanz je Mähroboter. Holt Status und Werte zyklisch über die
  * übergeordnete Mammotion-Cloud-Instanz und stellt Steuerbefehle bereit.
  */
-class MammotionMower extends IPSModule
+class MammotionMower extends IPSModuleStrict
 {
+    use MammotionPresentationHelper;
+
     private const MODULE_VERSION = '1.0';
     private const MODULE_BUILD = 1;
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
 
-    private const PROFILE_OPERATION = 'MAMMO.OperationStatus';
-    private const PROFILE_ONLINE = 'MAMMO.Online';
-    private const PROFILE_SYSTEM = 'MAMMO.SystemState';
-    private const PROFILE_CONTROL = 'MAMMO.Control';
-    private const PROFILE_MM = 'MAMMO.Millimeter';
-    private const PROFILE_DBM = 'MAMMO.dBm';
-    private const PROFILE_AREA = 'MAMMO.SquareMeter';
-    private const PROFILE_MINUTES = 'MAMMO.Minutes';
-    private const PROFILE_PERCENT = 'MAMMO.Percent';
-    private const PROFILE_WH = 'MAMMO.Wh';
-    private const PROFILE_HOURS = 'MAMMO.Hours';
-    private const PROFILE_KG = 'MAMMO.Kilogram';
-    private const PROFILE_WORK_RESULT = 'MAMMO.WorkResult';
-    private const PROFILE_WORK_TYPE = 'MAMMO.WorkType';
-    private const PROFILE_TASKS_PREFIX = 'MAMMO.Tasks.';
+    // Profile früherer Versionen, werden nach der Umstellung auf Darstellungen entfernt
+    private const LEGACY_PROFILES = [
+        'MAMMO.OperationStatus', 'MAMMO.Online', 'MAMMO.SystemState', 'MAMMO.Control', 'MAMMO.Tasks',
+        'MAMMO.Millimeter', 'MAMMO.dBm', 'MAMMO.SquareMeter', 'MAMMO.Minutes', 'MAMMO.Percent',
+        'MAMMO.Wh', 'MAMMO.Hours', 'MAMMO.Kilogram', 'MAMMO.WorkResult', 'MAMMO.WorkType'
+    ];
+    private const LEGACY_TASK_PROFILE_PREFIX = 'MAMMO.Tasks.';
 
     private const MIN_INTERVAL = 30;
     private const REFRESH_LOCK_TIMEOUT = 180;
@@ -75,13 +74,15 @@ class MammotionMower extends IPSModule
     private const ERR_OFFLINE = 4;
     private const ERR_NOT_FOUND = 6;
 
+    // Sicherheit: nur Rasterformate als Kachel-Hintergrund, kein SVG (SVG kann Skripte enthalten)
+    private const IMAGE_TYPES = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp'];
+
     private const ACTIONS = [1 => 'PAUSE', 2 => 'RESUME', 3 => 'STOP', 4 => 'RETURN', 5 => 'CANCEL_RETURN'];
 
     public function Create(): void
     {
         parent::Create();
-
-        $this->ConnectParent(self::CLOUD_MODULE);
+        // IPSModuleStrict: Die Verbindung zur Cloud-Instanz übernimmt die Verwaltungskonsole (siehe GetCompatibleParents)
 
         $this->RegisterPropertyString('DeviceID', '');
         $this->RegisterPropertyInteger('PollInterval', 60);
@@ -99,14 +100,11 @@ class MammotionMower extends IPSModule
         $this->RegisterAttributeString('DeviceModel', '');
         $this->RegisterAttributeString('DeviceIconURL', '');
         $this->RegisterAttributeString('TaskMap', '{}');
-        $this->RegisterAttributeInteger('RefreshLockSince', 0);
-        $this->RegisterAttributeInteger('RetryAttempt', 0);
-        $this->RegisterAttributeInteger('NextExtrasFetch', 0);
-        $this->RegisterAttributeString('ExtrasError', '');
         $this->RegisterAttributeString('LastWorkId', '');
         $this->RegisterAttributeString('RequestVariants', '{}');
-        $this->RegisterAttributeString('Unavailable', '{}');
-        $this->RegisterAttributeInteger('PreviousOperation', -1);
+        $this->RegisterAttributeBoolean('LegacyCleanupDone', false);
+        // Flüchtige Laufzeitzustände (Sperre, Wiederholungen, Takt der Zusatzdaten) liegen im Buffer:
+        // Sie werden nicht bei jedem Abruf auf die Festplatte geschrieben und sind nach einem Neustart sauber leer.
 
         $this->RegisterTimer('UpdateTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerUpdate", 0);');
         $this->RegisterTimer('RetryTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerRetry", 0);');
@@ -117,26 +115,38 @@ class MammotionMower extends IPSModule
 
     public function Destroy(): void
     {
-        if (!IPS_InstanceExists($this->InstanceID) && IPS_VariableProfileExists($this->TaskProfile())) {
-            IPS_DeleteVariableProfile($this->TaskProfile());
+        // Aufgabenprofil früherer Versionen dieser Instanz entfernen
+        $legacy = self::LEGACY_TASK_PROFILE_PREFIX . $this->InstanceID;
+        if (!IPS_InstanceExists($this->InstanceID) && IPS_VariableProfileExists($legacy)) {
+            IPS_DeleteVariableProfile($legacy);
         }
         parent::Destroy();
+    }
+
+    /**
+     * IPSModuleStrict: Mäher-Instanzen hängen an einer vorhandenen oder neuen Mammotion-Cloud-Instanz.
+     */
+    public function GetCompatibleParents(): string
+    {
+        return (string) json_encode(['type' => 'connect', 'moduleIDs' => [self::CLOUD_MODULE]]);
     }
 
     public function ApplyChanges(): void
     {
         parent::ApplyChanges();
 
-        $this->EnsureProfiles();
         $this->MaintainVariables();
+        $this->CleanupLegacyProfiles();
         $this->SetVisualizationType($this->ReadPropertyBoolean('EnableTile') ? 1 : 0);
         $this->UpdateMediaReference();
         $this->ReleaseRefreshLock();
         $this->ResetRetry();
-        $this->WriteAttributeInteger('NextExtrasFetch', 0);
+        $this->SetBufferInt('NextExtrasFetch', 0);
+        $this->SetBuffer('TileHash', '');
 
-        if (trim($this->ReadPropertyString('DeviceID')) !== $this->ReadAttributeString('ResolvedDeviceID')) {
-            $this->WriteAttributeString('ResolvedDeviceID', trim($this->ReadPropertyString('DeviceID')));
+        $configured = trim($this->ReadPropertyString('DeviceID'));
+        if ($configured !== '' && $configured !== $this->ReadAttributeString('ResolvedDeviceID')) {
+            $this->WriteAttributeString('ResolvedDeviceID', $configured);
         }
 
         if (IPS_GetKernelRunlevel() !== KR_READY) {
@@ -145,20 +155,20 @@ class MammotionMower extends IPSModule
         $this->Initialize();
     }
 
-    public function MessageSink($TimeStamp, $SenderID, $Message, $Data): void
+    public function MessageSink(int $TimeStamp, int $SenderID, int $Message, array $Data)
     {
         if ($Message === IPS_KERNELSTARTED) {
             $this->Initialize();
         }
     }
 
-    public function ReceiveData($JSONString): string
+    public function ReceiveData(string $JSONString): string
     {
         // Die Cloud-Instanz sendet derzeit keine Daten aktiv an die Mäher.
         return '';
     }
 
-    public function RequestAction($Ident, $Value): void
+    public function RequestAction(string $Ident, mixed $Value): void
     {
         switch ($Ident) {
             case 'TimerUpdate':
@@ -212,10 +222,10 @@ class MammotionMower extends IPSModule
             return 'DEAKTIVIERT: Instanz ist deaktiviert.';
         }
         // Manueller Abruf liest alle Zusatzdaten neu, auch zuvor abgelehnte
-        $this->WriteAttributeInteger('NextExtrasFetch', 0);
-        $this->WriteAttributeString('Unavailable', '{}');
+        $this->SetBufferInt('NextExtrasFetch', 0);
+        $this->SetBuffer('Unavailable', '');
         $ok = $this->Refresh();
-        if ($this->ReadAttributeInteger('RetryAttempt') > 0) {
+        if ($this->GetBufferInt('RetryAttempt') > 0) {
             return 'WIEDERHOLUNG GEPLANT: ' . (string) $this->GetValue('Diagnostic');
         }
         return ($ok ? 'ERFOLG: ' : 'FEHLER: ') . (string) $this->GetValue('Diagnostic');
@@ -307,8 +317,11 @@ class MammotionMower extends IPSModule
         if ($this->ReadPropertyBoolean('EnableTile')) {
             $mode = $this->ReadPropertyInteger('TileBackgroundMode');
             if ($mode === 1) {
-                $image = $this->BuildBackgroundImage();
-                $lines[] = 'Kachel-Hintergrund: ' . ($image['error'] === '' ? '🖼 Bild „' . IPS_GetName($this->ReadPropertyInteger('TileBackgroundMedia')) . '“ (' . round(strlen($image['uri']) / 1024) . ' KB)' : '⚠️ ' . $image['error'] . ' – Farbverlauf wird verwendet');
+                $error = $this->BackgroundError();
+                $mediaID = $this->ReadPropertyInteger('TileBackgroundMedia');
+                $lines[] = 'Kachel-Hintergrund: ' . ($error === ''
+                    ? '🖼 Bild „' . IPS_GetName($mediaID) . '“ (' . round((int) (IPS_GetMedia($mediaID)['MediaSize'] ?? 0) / 1024) . ' KB)'
+                    : '⚠️ ' . $error . ' – Farbverlauf wird verwendet');
             } else {
                 $lines[] = 'Kachel-Hintergrund: ' . ($mode === 2 ? 'transparent (Hintergrund aus der Kachel-Visualisierung)' : 'Farbverlauf');
             }
@@ -390,41 +403,53 @@ class MammotionMower extends IPSModule
         $steps = [];
 
         try {
-            $list = $this->Api('GET', '/v1/mowers');
-            $steps[] = 'Geräteliste OK';
+            // Geschwindigkeit: Normalerweise genügt ein einziger Aufruf (Gerätedetail enthält Status,
+            // Online-Flag, Modell, Nickname und Bild). Die Geräteliste wird nur zur Ermittlung der
+            // Device-ID oder zur Prüfung bei einem Fehler abgefragt.
+            $id = $this->ResolveDeviceID($steps);
+            try {
+                $detail = $this->Api('GET', '/v1/mower/' . rawurlencode($id));
+            } catch (RuntimeException $e) {
+                if ($e->getCode() !== self::ERR_API) {
+                    throw $e;
+                }
+                // Gerät unbekannt? Mit der Geräteliste gegenprüfen und gegebenenfalls neu zuordnen
+                $this->WriteAttributeIfChanged('ResolvedDeviceID', '');
+                $resolved = $this->ResolveDeviceID($steps);
+                if ($resolved === $id) {
+                    throw $e;
+                }
+                $id = $resolved;
+                $detail = $this->Api('GET', '/v1/mower/' . rawurlencode($id));
+            }
+            $data = is_array($detail['data'] ?? null) ? $detail['data'] : [];
+            $this->StoreDeviceMetadata($data);
+            $steps[] = 'Gerätestatus OK';
 
-            $device = $this->SelectDevice(is_array($list['data'] ?? null) ? $list['data'] : []);
-            $id = (string) ($device['id'] ?? '');
-            $this->WriteAttributeString('ResolvedDeviceID', $id);
-            $this->StoreDeviceMetadata($device);
-
-            if (((int) ($device['online'] ?? 0)) !== 1) {
-                $steps[] = 'Mäher offline (laut Geräteliste)';
+            if (((int) ($data['online'] ?? 1)) !== 1) {
+                $steps[] = 'Mäher offline';
                 $this->CompleteOffline($steps);
                 return true;
             }
-
-            $detail = $this->Api('GET', '/v1/mower/' . rawurlencode($id));
-            $this->ApplyDeviceDetails(is_array($detail['data'] ?? null) ? $detail['data'] : []);
-            $steps[] = 'Gerätestatus OK';
+            $this->ApplyDeviceDetails($data);
 
             // Nach Ende eines Einsatzes Verlauf und Statistik zeitnah nachladen
             $operation = (int) $this->GetValue('OperationStatus');
-            $previous = $this->ReadAttributeInteger('PreviousOperation');
+            $previous = $this->GetBuffer('PreviousOperation') === '' ? -1 : (int) $this->GetBuffer('PreviousOperation');
             if (in_array($previous, [self::OP_MOWING, self::OP_RETURNING], true) && !in_array($operation, [self::OP_MOWING, self::OP_RETURNING, self::OP_PAUSED], true)) {
-                $this->WriteAttributeInteger('NextExtrasFetch', min($this->ReadAttributeInteger('NextExtrasFetch'), time() + 120));
+                $this->SetBufferInt('NextExtrasFetch', min($this->GetBufferInt('NextExtrasFetch'), time() + 120));
             }
-            $this->WriteAttributeInteger('PreviousOperation', $operation);
+            $this->SetBuffer('PreviousOperation', (string) $operation);
 
             // Aufgaben, Statistik, Verlauf und Fehlerprotokoll ändern sich selten und werden seltener abgefragt.
             // Der Endpunkt /work-params wird bewusst NICHT verwendet (siehe README, Sicherheitshinweis).
             $partial = [];
-            if (time() >= $this->ReadAttributeInteger('NextExtrasFetch')) {
+            if (time() >= $this->GetBufferInt('NextExtrasFetch')) {
                 $jobs = ['Aufgaben' => 'FetchTasks'];
                 if ($this->ReadPropertyBoolean('EnableReports')) {
                     $jobs += ['Statistik' => 'FetchSummary', 'Verlauf' => 'FetchLastWork', 'Fehlerprotokoll' => 'FetchErrors'];
                 }
-                $unavailable = json_decode($this->ReadAttributeString('Unavailable'), true) ?: [];
+                $unavailable = json_decode($this->GetBuffer('Unavailable'), true) ?: [];
                 $info = [];
                 foreach ($jobs as $label => $method) {
                     if (($unavailable[$label]['until'] ?? 0) > time()) {
@@ -447,13 +472,13 @@ class MammotionMower extends IPSModule
                         $partial[] = $label . ': ' . $e->getMessage();
                     }
                 }
-                $this->WriteAttributeString('Unavailable', (string) json_encode($unavailable));
+                $this->SetBuffer('Unavailable', (string) json_encode($unavailable));
                 $steps = array_merge($steps, $info);
-                $this->WriteAttributeString('ExtrasError', implode(' | ', $partial));
-                $this->WriteAttributeInteger('NextExtrasFetch', time() + (count($partial) > 0 ? self::EXTRAS_RETRY : self::EXTRAS_INTERVAL));
+                $this->SetBuffer('ExtrasError', implode(' | ', $partial));
+                $this->SetBufferInt('NextExtrasFetch', time() + (count($partial) > 0 ? self::EXTRAS_RETRY : self::EXTRAS_INTERVAL));
             } else {
-                $next = date('H:i', $this->ReadAttributeInteger('NextExtrasFetch'));
-                $cachedError = $this->ReadAttributeString('ExtrasError');
+                $next = date('H:i', $this->GetBufferInt('NextExtrasFetch'));
+                $cachedError = $this->GetBuffer('ExtrasError');
                 if ($cachedError !== '') {
                     $partial[] = $cachedError . ' (neuer Versuch ' . $next . ')';
                 } else {
@@ -483,21 +508,40 @@ class MammotionMower extends IPSModule
         }
     }
 
-    private function SelectDevice(array $devices): array
+    /**
+     * Liefert die Device-ID. Die Geräteliste wird nur abgefragt, wenn noch keine ID bekannt ist.
+     */
+    private function ResolveDeviceID(array &$steps): string
     {
+        $known = $this->ReadAttributeString('ResolvedDeviceID');
+        if ($known !== '') {
+            return $known;
+        }
+        $list = $this->Api('GET', '/v1/mowers');
+        $steps[] = 'Geräteliste OK';
+        $devices = is_array($list['data'] ?? null) ? $list['data'] : [];
         $configured = trim($this->ReadPropertyString('DeviceID'));
+        $device = null;
         if ($configured === '') {
-            if (count($devices) === 0) {
+            $device = $devices[0] ?? null;
+            if ($device === null) {
                 throw new RuntimeException('Keine Mäher im Mammotion-Konto gefunden', self::ERR_NOT_FOUND);
             }
-            return (array) $devices[0];
-        }
-        foreach ($devices as $device) {
-            if ((string) ($device['id'] ?? '') === $configured) {
-                return (array) $device;
+        } else {
+            foreach ($devices as $candidate) {
+                if ((string) ($candidate['id'] ?? '') === $configured) {
+                    $device = $candidate;
+                    break;
+                }
+            }
+            if ($device === null) {
+                throw new RuntimeException('Device-ID ' . $configured . ' wurde im Mammotion-Konto nicht gefunden', self::ERR_NOT_FOUND);
             }
         }
-        throw new RuntimeException('Device-ID ' . $configured . ' wurde im Mammotion-Konto nicht gefunden', self::ERR_NOT_FOUND);
+        $id = (string) ($device['id'] ?? '');
+        $this->WriteAttributeIfChanged('ResolvedDeviceID', $id);
+        $this->StoreDeviceMetadata((array) $device);
+        return $id;
     }
 
     private function CompleteSuccess(array $steps, array $partial): void
@@ -535,13 +579,13 @@ class MammotionMower extends IPSModule
 
     private function ScheduleRetry(string $message): bool
     {
-        $attempt = $this->ReadAttributeInteger('RetryAttempt');
+        $attempt = $this->GetBufferInt('RetryAttempt');
         if ($attempt >= count(self::RETRY_DELAYS)) {
             return false;
         }
         $delay = self::RETRY_DELAYS[$attempt];
         $attempt++;
-        $this->WriteAttributeInteger('RetryAttempt', $attempt);
+        $this->SetBufferInt('RetryAttempt', $attempt);
         $this->SetValue('Diagnostic', 'Wiederholung ' . $attempt . '/' . count(self::RETRY_DELAYS) . ' in ' . $delay . ' s: ' . $message);
         $this->SetTimerInterval('RetryTimer', $delay * 1000);
         return true;
@@ -550,7 +594,7 @@ class MammotionMower extends IPSModule
     private function ResetRetry(): void
     {
         $this->SetTimerInterval('RetryTimer', 0);
-        $this->WriteAttributeInteger('RetryAttempt', 0);
+        $this->SetBufferInt('RetryAttempt', 0);
     }
 
     // ------------------------------------------------------------------
@@ -564,14 +608,14 @@ class MammotionMower extends IPSModule
             return false;
         }
         try {
-            $since = $this->ReadAttributeInteger('RefreshLockSince');
+            $since = $this->GetBufferInt('RefreshLockSince');
             if ($since > 0 && (time() - $since) < self::REFRESH_LOCK_TIMEOUT) {
                 return false;
             }
             if ($since > 0) {
                 $this->SendDebug('Refresh', 'Veraltete Sperre vom ' . date('d.m.Y H:i:s', $since) . ' übernommen', 0);
             }
-            $this->WriteAttributeInteger('RefreshLockSince', time());
+            $this->SetBufferInt('RefreshLockSince', time());
             return true;
         } finally {
             IPS_SemaphoreLeave($semaphore);
@@ -580,7 +624,28 @@ class MammotionMower extends IPSModule
 
     private function ReleaseRefreshLock(): void
     {
-        $this->WriteAttributeInteger('RefreshLockSince', 0);
+        $this->SetBufferInt('RefreshLockSince', 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Buffer und Attribute (Geschwindigkeit: nur schreiben, was sich ändert)
+    // ------------------------------------------------------------------
+
+    private function GetBufferInt(string $name): int
+    {
+        return (int) $this->GetBuffer($name);
+    }
+
+    private function SetBufferInt(string $name, int $value): void
+    {
+        $this->SetBuffer($name, (string) $value);
+    }
+
+    private function WriteAttributeIfChanged(string $name, string $value): void
+    {
+        if ($this->ReadAttributeString($name) !== $value) {
+            $this->WriteAttributeString($name, $value);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -660,11 +725,17 @@ class MammotionMower extends IPSModule
 
     private function StoreDeviceMetadata(array $device): void
     {
-        $this->WriteAttributeString('DeviceNickname', trim((string) ($device['nickname'] ?? '')));
-        $this->WriteAttributeString('DeviceApiName', trim((string) ($device['name'] ?? '')));
-        $this->WriteAttributeString('DeviceModel', trim((string) ($device['model'] ?? '')));
-        $icon = trim((string) ($device['icon'] ?? ''));
-        $this->WriteAttributeString('DeviceIconURL', filter_var($icon, FILTER_VALIDATE_URL) && preg_match('#^https?://#i', $icon) ? $icon : '');
+        // Nur vorhandene Felder übernehmen und nur bei Änderung schreiben (Attribute werden sofort gespeichert)
+        foreach (['DeviceNickname' => 'nickname', 'DeviceApiName' => 'name', 'DeviceModel' => 'model'] as $attribute => $field) {
+            if (array_key_exists($field, $device)) {
+                $this->WriteAttributeIfChanged($attribute, trim((string) $device[$field]));
+            }
+        }
+        if (array_key_exists('icon', $device)) {
+            // Sicherheit: Gerätebild nur über HTTPS laden
+            $icon = trim((string) $device['icon']);
+            $this->WriteAttributeIfChanged('DeviceIconURL', filter_var($icon, FILTER_VALIDATE_URL) && preg_match('#^https://#i', $icon) ? $icon : '');
+        }
     }
 
     private function ApplyDeviceDetails(array $data): void
@@ -705,20 +776,30 @@ class MammotionMower extends IPSModule
 
     private function UpdateTasks(array $tasks): void
     {
-        $profile = $this->TaskProfile();
-        foreach (IPS_GetVariableProfile($profile)['Associations'] as $a) {
-            IPS_SetVariableProfileAssociation($profile, (int) $a['Value'], '', '', -1);
-        }
         $map = [];
         $i = 1;
         foreach ($tasks as $task) {
             $name = trim((string) ($task['taskName'] ?? ''));
             if ($name === '') continue;
             $map[(string) $i] = ['id' => (string) ($task['taskId'] ?? ''), 'name' => $name];
-            IPS_SetVariableProfileAssociation($profile, $i, $name, '', -1);
             $i++;
         }
-        $this->WriteAttributeString('TaskMap', (string) json_encode($map, JSON_UNESCAPED_UNICODE));
+        $json = (string) json_encode($map, JSON_UNESCAPED_UNICODE);
+        if ($json === $this->ReadAttributeString('TaskMap')) {
+            return; // unverändert: weder Attribut noch Darstellung neu schreiben
+        }
+        $this->WriteAttributeString('TaskMap', $json);
+        // Die Aufgaben stehen direkt in der Darstellung der Variable, ein eigenes Profil je Instanz entfällt
+        $this->MaintainVariable('Task', 'Aufgabe starten', VARIABLETYPE_INTEGER, $this->TaskPresentation(), 120, true);
+    }
+
+    private function TaskPresentation(): array
+    {
+        $options = [];
+        foreach (json_decode($this->ReadAttributeString('TaskMap'), true) ?: [] as $value => $task) {
+            $options[(int) $value] = [(string) $task['name'], 'play', -1];
+        }
+        return $this->PresentEnumeration('list-check', $options);
     }
 
     private function FetchTasks(string $id): void
@@ -856,118 +937,117 @@ class MammotionMower extends IPSModule
     private function MaintainVariables(): void
     {
         $reports = $this->ReadPropertyBoolean('EnableReports');
+        $green = 0x00AA00; $grey = 0x808080; $red = 0xFF0000; $orange = 0xFF8800; $yellow = 0xFFCC00; $blue = 0x3399FF;
+
+        $operation = $this->PresentStates('robot', [
+            self::OP_OFFLINE      => ['Offline', $grey, 'power-off'],
+            self::OP_READY        => ['Bereit', $green, 'circle-check'],
+            self::OP_MOWING       => ['Mäht', 0x10B981, 'seedling'],
+            self::OP_PAUSED       => ['Pausiert', $yellow, 'pause'],
+            self::OP_CHARGING     => ['In der Station', $blue, 'charging-station'],
+            self::OP_RETURNING    => ['Heimfahrt', 0x8B5CF6, 'house'],
+            self::OP_DEVICE_ERROR => ['Gerätefehler', $red, 'triangle-exclamation'],
+            self::OP_CLOUD_ERROR  => ['API/Cloud-Fehler', $orange, 'cloud-exclamation'],
+            self::OP_UNKNOWN      => ['Unbekannt', 0xAAAAAA, 'circle-question']
+        ]);
+        $system = $this->PresentStates('gear', [
+            self::SYS_INIT     => ['Initialisierung', 0xAAAAAA, 'hourglass'],
+            self::SYS_CHECKING => ['Prüfung läuft', $blue, 'arrows-rotate'],
+            self::SYS_READY    => ['Betriebsbereit', $green, 'circle-check'],
+            self::SYS_PARTIAL  => ['Teilweise verfügbar', $yellow, 'circle-half-stroke'],
+            self::SYS_OFFLINE  => ['Offline', $grey, 'power-off'],
+            self::SYS_ERROR    => ['Fehler', $red, 'circle-xmark'],
+            self::SYS_DISABLED => ['Deaktiviert', 0x777777, 'circle-pause']
+        ]);
+        $battery = $this->PresentValue('battery-three-quarters', ' %', 0, [
+            $this->Interval(0, 19, 1, '', '', null, 'battery-empty', $red),
+            $this->Interval(20, 39, 1, '', '', null, 'battery-quarter', $orange),
+            $this->Interval(40, 69, 1, '', '', null, 'battery-half', $green),
+            $this->Interval(70, 100, 1, '', '', null, 'battery-full', $green)
+        ]);
+        $area = $this->PresentValue('vector-square', ' m²', 0, [
+            $this->Interval(10000, 1.0E12, 10000, ' ha', '', 2, '', -1)
+        ]);
+        $minutes = $this->PresentValue('clock', ' min', 0, [
+            $this->Interval(60, 1.0E9, 60, ' h', '', 1, '', -1)
+        ]);
+        $energy = $this->PresentValue('bolt', ' Wh', 0, [
+            $this->Interval(1000, 1.0E12, 1000, ' kWh', '', 2, '', -1)
+        ]);
+        $carbon = $this->PresentValue('leaf', ' kg', 1, [
+            $this->Interval(1000, 1.0E12, 1000, ' t', '', 2, '', -1)
+        ]);
+        $control = $this->PresentEnumeration('gamepad', [
+            1 => ['Pause', 'pause', -1],
+            2 => ['Fortsetzen', 'play', -1],
+            3 => ['Stop', 'stop', -1],
+            4 => ['Zur Ladestation', 'house', -1],
+            5 => ['Heimfahrt abbrechen', 'xmark', -1]
+        ]);
+        $workResult = $this->PresentStates('flag-checkered', [
+            0 => ['Unbekannt', 0xAAAAAA, ''], 1 => ['Läuft', 0x10B981, ''], 2 => ['Pausiert', $yellow, ''],
+            3 => ['Vom Nutzer gestoppt', $orange, ''], 4 => ['Unterbrochen', $red, ''], 5 => ['Abgeschlossen', $green, '']
+        ]);
+        $workType = $this->PresentStates('calendar', [
+            0 => ['Unbekannt', -1, ''], 1 => ['Einzeleinsatz', -1, ''], 2 => ['Zeitplan', -1, ''],
+            3 => ['Punktmähen', -1, ''], 4 => ['Fortsetzung', -1, '']
+        ]);
+
         $vars = [
             // Frühere HTMLBox-Variable entfernen, die Darstellung übernimmt die Kachel der Instanz
-            ['Dashboard', 'Dashboard', VARIABLETYPE_STRING, '~HTMLBox', 5, false],
-            ['Online', 'Online', VARIABLETYPE_BOOLEAN, self::PROFILE_ONLINE, 10, true],
-            ['OperationStatus', 'Betriebsstatus', VARIABLETYPE_INTEGER, self::PROFILE_OPERATION, 20, true],
-            ['Status', 'Status (Rohwert)', VARIABLETYPE_STRING, '', 21, true],
-            ['Battery', 'Akku', VARIABLETYPE_INTEGER, '~Battery.100', 30, true],
-            ['ChargeStatus', 'Ladestatus (Code)', VARIABLETYPE_INTEGER, '', 40, true],
-            ['KnifeHeight', 'Mähhöhe (letzter Einsatz)', VARIABLETYPE_INTEGER, self::PROFILE_MM, 50, true],
-            ['Speed', 'Geschwindigkeit (Code)', VARIABLETYPE_INTEGER, '', 60, true],
-            ['Firmware', 'Firmware', VARIABLETYPE_STRING, '', 70, true],
-            ['WifiRSSI', 'WLAN RSSI', VARIABLETYPE_INTEGER, self::PROFILE_DBM, 80, true],
-            ['WifiIP', 'WLAN IP', VARIABLETYPE_STRING, '', 90, true],
-            ['CellularRSSI', 'Mobilfunk RSSI', VARIABLETYPE_INTEGER, self::PROFILE_DBM, 100, true],
-            ['Control', 'Steuerung', VARIABLETYPE_INTEGER, self::PROFILE_CONTROL, 110, true],
-            ['Task', 'Aufgabe starten', VARIABLETYPE_INTEGER, $this->TaskProfile(), 120, true],
-            ['LastWorkEnd', 'Letzter Einsatz', VARIABLETYPE_INTEGER, '~UnixTimestamp', 130, $reports],
-            ['LastWorkResult', 'Letzter Einsatz – Ergebnis', VARIABLETYPE_INTEGER, self::PROFILE_WORK_RESULT, 131, $reports],
-            ['LastWorkType', 'Letzter Einsatz – Art', VARIABLETYPE_INTEGER, self::PROFILE_WORK_TYPE, 132, $reports],
-            ['LastWorkArea', 'Letzter Einsatz – Fläche', VARIABLETYPE_FLOAT, self::PROFILE_AREA, 133, $reports],
-            ['LastWorkDuration', 'Letzter Einsatz – Dauer', VARIABLETYPE_INTEGER, self::PROFILE_MINUTES, 134, $reports],
-            ['LastWorkProgress', 'Letzter Einsatz – Fortschritt', VARIABLETYPE_INTEGER, self::PROFILE_PERCENT, 135, $reports],
-            ['LastWorkEnergy', 'Letzter Einsatz – Energie', VARIABLETYPE_FLOAT, self::PROFILE_WH, 136, $reports],
-            ['TotalWorkCount', 'Einsätze gesamt', VARIABLETYPE_INTEGER, '', 140, $reports],
-            ['TotalWorkArea', 'Gemähte Fläche gesamt', VARIABLETYPE_FLOAT, self::PROFILE_AREA, 141, $reports],
-            ['TotalSaveTime', 'Zeitersparnis gesamt', VARIABLETYPE_FLOAT, self::PROFILE_HOURS, 142, $reports],
-            ['TotalCarbon', 'CO₂-Einsparung gesamt', VARIABLETYPE_FLOAT, self::PROFILE_KG, 143, $reports],
-            ['LastErrorText', 'Letzter Gerätefehler', VARIABLETYPE_STRING, '', 150, $reports],
-            ['LastErrorTime', 'Letzter Gerätefehler – Zeitpunkt', VARIABLETYPE_INTEGER, '~UnixTimestamp', 151, $reports],
-            ['ErrorCount30d', 'Gerätefehler (30 Tage)', VARIABLETYPE_INTEGER, '', 152, $reports],
-            ['SystemState', 'Systemzustand', VARIABLETYPE_INTEGER, self::PROFILE_SYSTEM, 200, true],
-            ['Diagnostic', 'Diagnose', VARIABLETYPE_STRING, '', 210, true],
-            ['LastCommand', 'Letzter Befehl', VARIABLETYPE_STRING, '', 220, true],
-            ['LastSuccess', 'Letzte erfolgreiche Aktualisierung', VARIABLETYPE_INTEGER, '~UnixTimestamp', 230, true],
-            ['LastAttempt', 'Letzter Abrufversuch', VARIABLETYPE_INTEGER, '~UnixTimestamp', 240, true]
+            ['Dashboard', 'Dashboard', VARIABLETYPE_STRING, '', 5, false],
+            ['Online', 'Online', VARIABLETYPE_BOOLEAN, $this->PresentBool('wifi', 'Offline', $grey, 'Online', $green), 10, true],
+            ['OperationStatus', 'Betriebsstatus', VARIABLETYPE_INTEGER, $operation, 20, true],
+            ['Status', 'Status (Rohwert)', VARIABLETYPE_STRING, $this->PresentValue('code'), 21, true],
+            ['Battery', 'Akku', VARIABLETYPE_INTEGER, $battery, 30, true],
+            ['ChargeStatus', 'Ladestatus (Code)', VARIABLETYPE_INTEGER, $this->PresentValue('plug'), 40, true],
+            ['KnifeHeight', 'Mähhöhe (letzter Einsatz)', VARIABLETYPE_INTEGER, $this->PresentValue('ruler-vertical', ' mm'), 50, true],
+            ['Speed', 'Geschwindigkeit (Code)', VARIABLETYPE_INTEGER, $this->PresentValue('gauge'), 60, true],
+            ['Firmware', 'Firmware', VARIABLETYPE_STRING, $this->PresentValue('microchip'), 70, true],
+            ['WifiRSSI', 'WLAN RSSI', VARIABLETYPE_INTEGER, $this->PresentValue('wifi', ' dBm'), 80, true],
+            ['WifiIP', 'WLAN IP', VARIABLETYPE_STRING, $this->PresentValue('network-wired'), 90, true],
+            ['CellularRSSI', 'Mobilfunk RSSI', VARIABLETYPE_INTEGER, $this->PresentValue('signal', ' dBm'), 100, true],
+            ['Control', 'Steuerung', VARIABLETYPE_INTEGER, $control, 110, true],
+            ['Task', 'Aufgabe starten', VARIABLETYPE_INTEGER, $this->TaskPresentation(), 120, true],
+            ['LastWorkEnd', 'Letzter Einsatz', VARIABLETYPE_INTEGER, $this->PresentDateTime(), 130, $reports],
+            ['LastWorkResult', 'Letzter Einsatz – Ergebnis', VARIABLETYPE_INTEGER, $workResult, 131, $reports],
+            ['LastWorkType', 'Letzter Einsatz – Art', VARIABLETYPE_INTEGER, $workType, 132, $reports],
+            ['LastWorkArea', 'Letzter Einsatz – Fläche', VARIABLETYPE_FLOAT, $area, 133, $reports],
+            ['LastWorkDuration', 'Letzter Einsatz – Dauer', VARIABLETYPE_INTEGER, $minutes, 134, $reports],
+            ['LastWorkProgress', 'Letzter Einsatz – Fortschritt', VARIABLETYPE_INTEGER, $this->PresentValue('percent', ' %'), 135, $reports],
+            ['LastWorkEnergy', 'Letzter Einsatz – Energie', VARIABLETYPE_FLOAT, $energy, 136, $reports],
+            ['TotalWorkCount', 'Einsätze gesamt', VARIABLETYPE_INTEGER, $this->PresentValue('hashtag'), 140, $reports],
+            ['TotalWorkArea', 'Gemähte Fläche gesamt', VARIABLETYPE_FLOAT, $area, 141, $reports],
+            ['TotalSaveTime', 'Zeitersparnis gesamt', VARIABLETYPE_FLOAT, $this->PresentValue('hourglass-half', ' h', 1), 142, $reports],
+            ['TotalCarbon', 'CO₂-Einsparung gesamt', VARIABLETYPE_FLOAT, $carbon, 143, $reports],
+            ['LastErrorText', 'Letzter Gerätefehler', VARIABLETYPE_STRING, $this->PresentValue('triangle-exclamation'), 150, $reports],
+            ['LastErrorTime', 'Letzter Gerätefehler – Zeitpunkt', VARIABLETYPE_INTEGER, $this->PresentDateTime(), 151, $reports],
+            ['ErrorCount30d', 'Gerätefehler (30 Tage)', VARIABLETYPE_INTEGER, $this->PresentValue('list-ol'), 152, $reports],
+            ['SystemState', 'Systemzustand', VARIABLETYPE_INTEGER, $system, 200, true],
+            ['Diagnostic', 'Diagnose', VARIABLETYPE_STRING, $this->PresentValue('stethoscope'), 210, true],
+            ['LastCommand', 'Letzter Befehl', VARIABLETYPE_STRING, $this->PresentValue('terminal'), 220, true],
+            ['LastSuccess', 'Letzte erfolgreiche Aktualisierung', VARIABLETYPE_INTEGER, $this->PresentDateTime(true), 230, true],
+            ['LastAttempt', 'Letzter Abrufversuch', VARIABLETYPE_INTEGER, $this->PresentDateTime(true), 240, true]
         ];
-        foreach ($vars as [$ident, $name, $type, $profile, $position, $keep]) {
-            $this->MaintainVariable($ident, $name, $type, $profile, $position, $keep);
+        foreach ($vars as [$ident, $name, $type, $presentation, $position, $keep]) {
+            $this->MaintainVariable($ident, $name, $type, $presentation, $position, $keep);
         }
         $this->EnableAction('Control');
         $this->EnableAction('Task');
     }
 
-    private function TaskProfile(): string
+    /**
+     * Einmalig nach dem Update: Profile früherer Versionen löschen, sofern sie nicht mehr verwendet werden.
+     */
+    private function CleanupLegacyProfiles(): void
     {
-        return self::PROFILE_TASKS_PREFIX . $this->InstanceID;
-    }
-
-    private function EnsureProfiles(): void
-    {
-        if (!IPS_VariableProfileExists(self::PROFILE_ONLINE)) {
-            IPS_CreateVariableProfile(self::PROFILE_ONLINE, VARIABLETYPE_BOOLEAN);
-            IPS_SetVariableProfileIcon(self::PROFILE_ONLINE, 'Network');
+        $taskProfile = self::LEGACY_TASK_PROFILE_PREFIX . $this->InstanceID;
+        if (IPS_VariableProfileExists($taskProfile)) {
+            IPS_DeleteVariableProfile($taskProfile);
         }
-        IPS_SetVariableProfileAssociation(self::PROFILE_ONLINE, 0, 'Offline', '', 0x808080);
-        IPS_SetVariableProfileAssociation(self::PROFILE_ONLINE, 1, 'Online', '', 0x00AA00);
-        $this->EnsureIntegerProfile(self::PROFILE_OPERATION, 'Information', '', [
-            [self::OP_OFFLINE, 'Offline', 0x808080], [self::OP_READY, 'Bereit', 0x00AA00],
-            [self::OP_MOWING, 'Mäht', 0x00CC66], [self::OP_PAUSED, 'Pausiert', 0xFFCC00],
-            [self::OP_CHARGING, 'In der Station', 0x3399FF], [self::OP_RETURNING, 'Heimfahrt', 0x8B5CF6],
-            [self::OP_DEVICE_ERROR, 'Gerätefehler', 0xFF0000], [self::OP_CLOUD_ERROR, 'API/Cloud-Fehler', 0xFF8800],
-            [self::OP_UNKNOWN, 'Unbekannt', 0xAAAAAA]
-        ]);
-        $this->EnsureIntegerProfile(self::PROFILE_SYSTEM, 'Gear', '', [
-            [self::SYS_INIT, 'Initialisierung', 0xAAAAAA], [self::SYS_CHECKING, 'Prüfung läuft', 0x3399FF],
-            [self::SYS_READY, 'Betriebsbereit', 0x00AA00], [self::SYS_PARTIAL, 'Teilweise verfügbar', 0xFFCC00],
-            [self::SYS_OFFLINE, 'Offline', 0x808080], [self::SYS_ERROR, 'Fehler', 0xFF0000],
-            [self::SYS_DISABLED, 'Deaktiviert', 0x777777]
-        ]);
-        $this->EnsureIntegerProfile(self::PROFILE_CONTROL, 'Execute', '', [
-            [1, 'Pause', -1], [2, 'Fortsetzen', -1], [3, 'Stop', -1],
-            [4, 'Zur Ladestation', -1], [5, 'Heimfahrt abbrechen', -1]
-        ]);
-        $this->EnsureIntegerProfile(self::PROFILE_MM, 'Distance', ' mm', []);
-        $this->EnsureIntegerProfile(self::PROFILE_DBM, 'Intensity', ' dBm', []);
-        $this->EnsureIntegerProfile($this->TaskProfile(), 'Script', '', []);
-        $this->EnsureIntegerProfile(self::PROFILE_MINUTES, 'Clock', ' min', []);
-        $this->EnsureIntegerProfile(self::PROFILE_PERCENT, 'Intensity', ' %', []);
-        $this->EnsureIntegerProfile(self::PROFILE_WORK_RESULT, 'Information', '', [
-            [0, 'Unbekannt', 0xAAAAAA], [1, 'Läuft', 0x00CC66], [2, 'Pausiert', 0xFFCC00],
-            [3, 'Vom Nutzer gestoppt', 0xFF8800], [4, 'Unterbrochen', 0xFF0000], [5, 'Abgeschlossen', 0x00AA00]
-        ]);
-        $this->EnsureIntegerProfile(self::PROFILE_WORK_TYPE, 'Calendar', '', [
-            [0, 'Unbekannt', -1], [1, 'Einzeleinsatz', -1], [2, 'Zeitplan', -1], [3, 'Punktmähen', -1], [4, 'Fortsetzung', -1]
-        ]);
-        $this->EnsureFloatProfile(self::PROFILE_AREA, 'Image', ' m²', 1);
-        $this->EnsureFloatProfile(self::PROFILE_WH, 'Electricity', ' Wh', 1);
-        $this->EnsureFloatProfile(self::PROFILE_HOURS, 'Clock', ' h', 1);
-        $this->EnsureFloatProfile(self::PROFILE_KG, 'Leaf', ' kg', 2);
-    }
-
-    private function EnsureFloatProfile(string $name, string $icon, string $suffix, int $digits): void
-    {
-        if (!IPS_VariableProfileExists($name)) {
-            IPS_CreateVariableProfile($name, VARIABLETYPE_FLOAT);
-            IPS_SetVariableProfileIcon($name, $icon);
-            IPS_SetVariableProfileText($name, '', $suffix);
-            IPS_SetVariableProfileDigits($name, $digits);
-        }
-    }
-
-    private function EnsureIntegerProfile(string $name, string $icon, string $suffix, array $associations): void
-    {
-        if (!IPS_VariableProfileExists($name)) {
-            IPS_CreateVariableProfile($name, VARIABLETYPE_INTEGER);
-            IPS_SetVariableProfileIcon($name, $icon);
-            if ($suffix !== '') {
-                IPS_SetVariableProfileText($name, '', $suffix);
-            }
-        }
-        foreach ($associations as [$value, $caption, $color]) {
-            IPS_SetVariableProfileAssociation($name, $value, $caption, '', $color);
+        if (!$this->ReadAttributeBoolean('LegacyCleanupDone')) {
+            $this->RemoveUnusedProfiles(self::LEGACY_PROFILES);
+            $this->WriteAttributeBoolean('LegacyCleanupDone', true);
         }
     }
 
@@ -1007,9 +1087,7 @@ class MammotionMower extends IPSModule
         if (strlen($content) > 3 * 1024 * 1024) {
             return ['uri' => '', 'error' => 'Bild ist größer als ca. 2 MB, bitte verkleinern'];
         }
-        $types = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'svg' => 'image/svg+xml'];
-        $extension = strtolower(pathinfo((string) $media['MediaFile'], PATHINFO_EXTENSION));
-        $mime = $types[$extension] ?? 'image/jpeg';
+        $mime = self::IMAGE_TYPES[strtolower(pathinfo((string) $media['MediaFile'], PATHINFO_EXTENSION))];
         return ['uri' => 'data:' . $mime . ';base64,' . preg_replace('/[^A-Za-z0-9+\/=]/', '', $content), 'error' => ''];
     }
 
@@ -1028,6 +1106,9 @@ class MammotionMower extends IPSModule
         }
         if ((int) ($media['MediaSize'] ?? 0) > 2 * 1024 * 1024) {
             return 'Bild ist größer als ca. 2 MB, bitte verkleinern';
+        }
+        if (!isset(self::IMAGE_TYPES[strtolower(pathinfo((string) $media['MediaFile'], PATHINFO_EXTENSION))])) {
+            return 'Bildformat nicht unterstützt (JPG, PNG, WebP oder GIF verwenden)';
         }
         return '';
     }
@@ -1051,7 +1132,14 @@ class MammotionMower extends IPSModule
         if (!$this->ReadPropertyBoolean('EnableTile')) {
             return;
         }
-        $this->UpdateVisualizationValue((string) json_encode($this->BuildTileState(), JSON_UNESCAPED_UNICODE));
+        $json = (string) json_encode($this->BuildTileState(), JSON_UNESCAPED_UNICODE);
+        // Geschwindigkeit: nur senden, wenn sich der Inhalt geändert hat
+        $hash = md5($json);
+        if ($hash === $this->GetBuffer('TileHash')) {
+            return;
+        }
+        $this->SetBuffer('TileHash', $hash);
+        $this->UpdateVisualizationValue($json);
     }
 
     private function BuildTileState(): array
