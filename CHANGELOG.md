@@ -4,6 +4,12 @@ Alle relevanten Änderungen werden in dieser Datei dokumentiert.
 
 ## [1.1] - 2026-10-06
 
+Build 3.
+
+- Hausstil: Regel für die Modulliste (`vendor` gesetzt, höchstens ein Alias) in `STYLEGUIDE.md` und Strukturprüfung ergänzt; Modulliste: Mammotion Cloud und Mammotion Mähroboter erscheinen nur noch einmal statt zusätzlich unter „Mammotion Open API Cloud“ bzw. „Mammotion Mäher“
+
+## [1.1] - 2026-10-06
+
 Build 2.
 
 - Einheitliches Design nach `STYLEGUIDE.md`: Kachel-Grundlage (Farben, Schrift, Radien, Zustandsfarben) und Einstellung „Farbschema der Kachel“ (Symcon-Design, Dunkel, Hell); Kachel-Datei heißt `tile.html`; einheitliche Badges; gemeinsamer Test-Workflow mit Struktur- und Ladetest
