@@ -2,6 +2,13 @@
 
 Alle relevanten Änderungen werden in dieser Datei dokumentiert.
 
+## [1.1] - 2026-10-06
+
+Build 2.
+
+- Einheitliches Design nach `STYLEGUIDE.md`: Kachel-Grundlage (Farben, Schrift, Radien, Zustandsfarben) und Einstellung „Farbschema der Kachel“ (Symcon-Design, Dunkel, Hell); Kachel-Datei heißt `tile.html`; einheitliche Badges; gemeinsamer Test-Workflow mit Struktur- und Ladetest
+- Kachel passt sich hellen und dunklen Designs an (vorher immer dunkelblau); Hintergrund „Transparent“ heißt jetzt „Keiner (nur Farbschema)“; Zustandsfarben wie in allen Modulen; Repository-Adresse auf `Mammotion_Symcon` korrigiert
+
 ## [1.0] - 2026-10-05
 
 Build 1. Vollständige Neuentwicklung. Nicht kompatibel mit den Instanzen früherer Versionen (neue Modul-GUIDs).

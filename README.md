@@ -1,16 +1,17 @@
 # Mammotion Open API für IP-Symcon
 
-[![Version](https://img.shields.io/badge/Version-1.0-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI/blob/main/CHANGELOG.md)
-[![Build](https://img.shields.io/badge/Build-1-blue.svg)](https://github.com/cfaf2002/MammotionOpenAPI/blob/main/library.json)
-[![IP-Symcon](https://img.shields.io/badge/IP--Symcon-9.0%2B-orange.svg)](https://www.symcon.de/)
-[![PHP](https://img.shields.io/badge/PHP-8.5-777BB4.svg?logo=php&logoColor=white)](https://www.php.net/releases/8.5/)
-[![Basisklasse](https://img.shields.io/badge/Basisklasse-IPSModuleStrict-informational.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/module/)
-[![Darstellungen](https://img.shields.io/badge/Variablen-Darstellungen-informational.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/darstellungen/)
-[![Kachel](https://img.shields.io/badge/Kachel--Visualisierung-HTML--SDK-informational.svg)](#kachel)
+[![IP-Symcon ab 9.0](https://img.shields.io/badge/IP--Symcon-ab_9.0-0b6fb3.svg)](https://www.symcon.de)
+[![Optimiert für Symcon 9.0](https://img.shields.io/badge/optimiert_f%C3%BCr-Symcon_9.0-0b6fb3.svg)](https://www.symcon.de/de/service/dokumentation/installation/migrationen/v81-v90-q1-2026/)
+[![Modul-Version 1.1 (Build 2)](https://img.shields.io/badge/Modul--Version-1.1_(Build_2)-informational.svg)](library.json)
+[![Tests](https://github.com/cfaf2002/Mammotion_Symcon/actions/workflows/tests.yml/badge.svg)](https://github.com/cfaf2002/Mammotion_Symcon/actions/workflows/tests.yml)
+[![PHP 8.3 und 8.5](https://img.shields.io/badge/PHP-8.3_%7C_8.5-777bb4.svg?logo=php&logoColor=white)](https://www.php.net)
+[![SDK: IPSModuleStrict](https://img.shields.io/badge/SDK-IPSModuleStrict-success.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/module/)
+[![Variablen: Darstellungen](https://img.shields.io/badge/Variablen-Darstellungen-success.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/darstellungen/)
+[![Kachel-Visualisierung: HTML-SDK](https://img.shields.io/badge/Kachel--Visualisierung-HTML--SDK-orange.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/html-sdk/)
+[![Farbschema: Symcon-Design, Dunkel, Hell](https://img.shields.io/badge/Farbschema-Symcon--Design_%7C_Dunkel_%7C_Hell-blueviolet.svg)](STYLEGUIDE.md)
+![Sprache: Deutsch](https://img.shields.io/badge/Sprache-Deutsch-blueviolet.svg)
+[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-green.svg)](LICENSE)
 [![Mammotion Open API](https://img.shields.io/badge/Mammotion-Open%20API-success.svg)](https://developer.mammotion.com/)
-[![Lizenz: MIT](https://img.shields.io/badge/Lizenz-MIT-yellow.svg)](LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/cfaf2002/MammotionOpenAPI.svg)](https://github.com/cfaf2002/MammotionOpenAPI/commits/main)
-[![Issues](https://img.shields.io/github/issues/cfaf2002/MammotionOpenAPI.svg)](https://github.com/cfaf2002/MammotionOpenAPI/issues)
 
 Integration von Mammotion-Mährobotern in IP-Symcon über die offizielle Mammotion Open API.
 
@@ -125,7 +126,7 @@ Es werden keine zusätzlichen PHP-Bibliotheken benötigt.
 ## Projektstruktur
 
 ```text
-MammotionOpenAPI/
+Mammotion_Symcon/
 ├── .gitignore
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
@@ -144,7 +145,7 @@ MammotionOpenAPI/
 │   └── module.php
 └── MammotionMower/
     ├── form.json
-    ├── module.html               Kachel (HTML-SDK)
+    ├── tile.html               Kachel (HTML-SDK)
     ├── module.json
     └── module.php
 ```
@@ -155,7 +156,7 @@ MammotionOpenAPI/
 2. **Hinzufügen** wählen und diese Adresse eintragen:
 
 ```text
-https://github.com/cfaf2002/MammotionOpenAPI.git
+https://github.com/cfaf2002/Mammotion_Symcon.git
 ```
 
 Die Installation über die Repository-Adresse wird empfohlen. Sie ermöglicht Updates über die Modulverwaltung.
@@ -382,13 +383,15 @@ Alle Befehle sind immer verfügbar. Die zum aktuellen Zustand passenden werden h
 
 **Starten** und **Fortsetzen** setzen den Mäher in Bewegung und müssen deshalb mit einem zweiten Tipp auf „Wirklich?“ bestätigt werden (4 Sekunden Zeit). Offline oder bei einem Fehler werden keine Befehle angeboten.
 
-**Hintergrund** (Instanz → Block „Kachel-Hintergrund“):
+**Farbschema und Hintergrund** (Instanz → Block „Kachel-Hintergrund“):
 
-| Einstellung | Wirkung |
+Das **Farbschema der Kachel** ist in allen Modulen gleich (siehe [STYLEGUIDE.md](STYLEGUIDE.md)): *Symcon-Design* übernimmt Schrift- und Akzentfarbe der Visualisierung und passt sich hellen wie dunklen Designs an, *Dunkel* und *Hell* setzen einen festen Hintergrund.
+
+| Hintergrund | Wirkung |
 |---|---|
-| Farbverlauf (Standard) | dunkler Verlauf, Akzentfarbe je nach Zustand |
-| Bild aus Medienobjekt | eigenes Bild als Hintergrund, mit einstellbarer Abdunklung (0–90 %, Standard 55 %) |
-| Transparent | es gilt der Hintergrund, der in der Kachel-Visualisierung für diese Kachel eingestellt ist |
+| Schimmer in der Zustandsfarbe (Standard) | leichter Schimmer in der Farbe des Zustands über dem Farbschema |
+| Bild aus Medienobjekt | eigenes Bild als Hintergrund, mit einstellbarer Abdunklung (0–90 %, Standard 55 %), Schrift immer hell |
+| Keiner (nur Farbschema) | kein Schimmer, nur das Farbschema |
 
 So wird ein Bild eingebunden, wie in IP-Symcon üblich:
 
@@ -550,6 +553,10 @@ Skripte mit `MAMMO_Pause`, `MAMMO_StartTask` usw. funktionieren weiter, die Inst
 ## Nutzungshinweis
 
 Privates, inoffizielles Projekt – nicht von Mammotion. Das Modul nutzt die Mammotion Open API mit dem eigenen Entwicklerzugang. Mammotion kann die API jederzeit ändern oder einschränken. Steuerbefehle bewegen einen realen Mähroboter. Die Nutzung erfolgt auf eigene Verantwortung. Der Hinweis wird in der Cloud-Instanz einmalig bestätigt.
+
+## Changelog
+
+Alle Änderungen stehen in [CHANGELOG.md](CHANGELOG.md).
 
 ## Lizenz
 

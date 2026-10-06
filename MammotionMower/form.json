@@ -49,11 +49,30 @@
       "items": [
         {
           "type": "Select",
+          "name": "TileTheme",
+          "caption": "Farbschema der Kachel",
+          "options": [
+            {
+              "caption": "Symcon-Design (Farben der Visualisierung)",
+              "value": 0
+            },
+            {
+              "caption": "Dunkel",
+              "value": 1
+            },
+            {
+              "caption": "Hell",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "type": "Select",
           "name": "TileBackgroundMode",
           "caption": "Hintergrund",
           "options": [
             {
-              "caption": "Farbverlauf (Standard)",
+              "caption": "Schimmer in der Zustandsfarbe (Standard)",
               "value": 0
             },
             {
@@ -61,7 +80,7 @@
               "value": 1
             },
             {
-              "caption": "Transparent (Hintergrund der Kachel-Visualisierung)",
+              "caption": "Keiner (nur Farbschema)",
               "value": 2
             }
           ]

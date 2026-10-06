@@ -1,0 +1,537 @@
+<!-- SPDX-License-Identifier: MIT · Copyright (c) 2026 Armin Frohwerk · Mammotion Open API für IP-Symcon -->
+<style>
+    /* ===== Hausstil cfaf2002 · Kachel-Grundlage v1 (siehe STYLEGUIDE.md) =====
+       Farbschema 0 = Symcon-Design (Farben der Visualisierung), 1 = Dunkel, 2 = Hell.
+       Modulspezifisch ist nur --brand (Akzent der festen Farbschemas). */
+    :root {
+        --brand: #34b36b;
+        --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --fg: var(--content-color, #eef3f7);
+        --accent: var(--accent-color, var(--brand));
+        --on-accent: #ffffff;
+        --muted: color-mix(in srgb, var(--fg) 65%, transparent);
+        --faint: color-mix(in srgb, var(--fg) 40%, transparent);
+        --line: color-mix(in srgb, var(--fg) 15%, transparent);
+        --surface: color-mix(in srgb, var(--fg) 7%, transparent);
+        --surface-hover: color-mix(in srgb, var(--fg) 12%, transparent);
+        --popup: var(--card-color, #232a33);
+        --ok: #34b36b;
+        --warn: #e2a63b;
+        --bad: #e5484d;
+        --info: #4b8ef0;
+        --off: #8796a5;
+        --radius-l: 14px;
+        --radius: 12px;
+        --radius-s: 8px;
+        --pill: 999px;
+        --gap: 8px;
+    }
+    html.theme-dark  { --fg: #eef3f7; --accent: var(--brand); --tile-bg: #1b2530; --popup: #232d39; }
+    html.theme-light { --fg: #1d2b36; --accent: var(--brand); --tile-bg: #e9eef3; --popup: #ffffff; }
+    html.theme-dark body, html.theme-light body { background: var(--tile-bg); }
+    html, body { font-family: var(--font); color: var(--fg); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+    /* ===== Ende Kachel-Grundlage ===== */
+
+  /* Modul-Variablen aus der Kachel-Grundlage; --a = Zustandsfarbe, --b = Akkufarbe (setzt das Skript) */
+  :root {
+    --a: var(--accent);
+    --b: var(--ok);
+    --txt: var(--fg);
+    --mut: var(--muted);
+    --dim: var(--faint);
+  }
+  html, body { margin: 0; padding: 0; height: 100%; background: transparent; }
+  * { box-sizing: border-box; }
+  .tile {
+    position: relative; height: 100%; width: 100%; overflow: hidden;
+    container-type: size; container-name: tile;
+    display: flex; flex-direction: column; gap: 16px;
+    padding: 46px 20px 16px; border-radius: inherit; color: var(--txt);
+    font-family: var(--font);
+    /* Schimmer in der Zustandsfarbe über dem Hintergrund des Farbschemas (Symcon-Design: transparent) */
+    background:
+      radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--a) 22%, transparent), transparent 60%),
+      var(--tile-bg, transparent);
+    transition: background .6s;
+  }
+  /* Mähbahnen im Hintergrund, laufen beim Mähen */
+  .grass {
+    position: absolute; inset: -40%; pointer-events: none; opacity: 0; transition: opacity .8s;
+    background: repeating-linear-gradient(115deg,
+      color-mix(in srgb, var(--a) 9%, transparent) 0 28px,
+      transparent 28px 56px);
+  }
+  .tile.mowing .grass { opacity: 1; animation: mow 9s linear infinite; }
+  /* Hintergrund: Bild aus Medienobjekt, abgedunkelt für Lesbarkeit */
+  .tile.bg-image {
+    background:
+      radial-gradient(120% 80% at 100% 0%, color-mix(in srgb, var(--a) 22%, transparent), transparent 60%),
+      linear-gradient(180deg, rgba(0, 0, 0, .45), transparent 30%, transparent 65%, rgba(0, 0, 0, .45)),
+      linear-gradient(rgba(8, 13, 25, var(--shade, .55)), rgba(8, 13, 25, var(--shade, .55))),
+      var(--img) center / cover no-repeat, #1b2530;
+  }
+  /* Hintergrund: keiner – nur das Farbschema, ohne Schimmer */
+  .tile.bg-none { background: var(--tile-bg, transparent); }
+  .tile.bg-image .badge, .tile.bg-image .img { background-color: rgba(8, 13, 25, .6); }
+  /* Auf dem Bild immer helle Schrift */
+  .tile.bg-image {
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+    --txt: #f1f5f9; --mut: rgba(241, 245, 249, .82); --dim: rgba(241, 245, 249, .7);
+    --line: rgba(241, 245, 249, .16); --surface: rgba(8, 13, 25, .45); --surface-hover: rgba(241, 245, 249, .16);
+  }
+  @keyframes mow { from { transform: translateX(0); } to { transform: translateX(122px); } }
+  .tile > *:not(.grass) { position: relative; }
+
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .img {
+    flex: 0 0 auto; width: 52px; height: 52px; border-radius: var(--radius-l); display: grid; place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line); overflow: hidden;
+  }
+  .img img { width: 100%; height: 100%; object-fit: contain; padding: 4px; filter: drop-shadow(0 6px 10px rgba(0,0,0,.35)); }
+  .img svg { width: 30px; height: 30px; color: var(--a); }
+  .name { font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -.01em; }
+  .model { margin-top: 2px; font-size: 12px; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .badge {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--pill);
+    font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--a);
+    background: color-mix(in srgb, var(--a) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--a) 50%, transparent);
+  }
+  .badge i { width: 7px; height: 7px; border-radius: 50%; background: var(--a); box-shadow: 0 0 10px var(--a); }
+  .tile.live .badge i { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+
+  .hero { display: flex; align-items: center; gap: 22px; flex: 1 1 auto; min-height: 0; padding: 4px 0; }
+  .ring { position: relative; flex: 0 0 auto; width: 112px; height: 112px; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 10; }
+  .ring .track { stroke: var(--surface-hover); }
+  .ring .bar {
+    stroke: var(--b); stroke-linecap: round; stroke-dasharray: 326.7; stroke-dashoffset: 326.7;
+    transition: stroke-dashoffset 1s ease, stroke .6s; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--b) 60%, transparent));
+  }
+  .pct { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+  .pct b { font-size: 28px; font-weight: 900; line-height: 1; }
+  .pct small { margin-top: 4px; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+  .tile.dim .ring { opacity: .45; }
+  .state { min-width: 0; }
+  .st { font-size: 24px; font-weight: 850; line-height: 1.1; }
+  .bar2 { width: 44px; height: 4px; margin: 10px 0 8px; border-radius: 4px; background: var(--a); box-shadow: 0 0 14px var(--a); }
+  .sub { font-size: 12px; color: var(--mut); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sub.warn { color: var(--warn); }
+  .note { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 5px 10px; border-radius: var(--pill);
+    font-size: 11px; color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); max-width: 100%; }
+  .note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .note:empty, .note.hide { display: none; }
+
+  .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .chip { padding: 11px 12px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid var(--line); min-width: 0; }
+  .chip > span { display: block; font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+  .chip > b { display: flex; align-items: center; margin-top: 4px; font-size: 14px; font-weight: 750; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip em { display: block; margin-top: 1px; font-size: 10px; font-style: normal; color: var(--dim); }
+  .sig { display: inline-flex; gap: 2px; align-items: flex-end; height: 11px; margin-right: 6px; flex: 0 0 auto; }
+  .sig i { width: 3px; border-radius: 1px; background: var(--faint); }
+  .sig i:nth-child(1) { height: 4px; } .sig i:nth-child(2) { height: 7px; } .sig i:nth-child(3) { height: 9px; } .sig i:nth-child(4) { height: 11px; }
+  .sig i.on { background: var(--txt); }
+
+  .lastwork { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--mut); min-width: 0; }
+  .lastwork b { color: var(--txt); font-weight: 700; }
+  .lastwork span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lastwork svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--dim); }
+  .lastwork.hide, .totals.hide { display: none; }
+  .lastwork.past svg { color: var(--warn); }
+  .totals { display: none; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .note.err { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .actions { display: flex; flex-direction: column; gap: 8px; }
+  .actions:empty { display: none; }
+  .row { display: flex; gap: 8px; }
+  .cmdbar { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid var(--line); }
+  .cmd {
+    flex: 1 1 0; min-width: 0; height: 34px; padding: 0 8px; border: 0; border-radius: var(--radius-s); cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 700; color: var(--mut); background: transparent;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden;
+    transition: background .2s, color .2s, transform .1s;
+  }
+  .cmd span { overflow: hidden; text-overflow: ellipsis; }
+  .cmd svg { width: 14px; height: 14px; flex: 0 0 auto; }
+  .cmd:hover { background: var(--surface-hover); color: var(--txt); }
+  .cmd:active { transform: scale(.96); }
+  .cmd.hot { color: var(--txt); background: color-mix(in srgb, var(--a) 26%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--a) 55%, transparent); }
+  .cmd.confirm { color: #111827; background: var(--warn); }
+  .btn, .sel {
+    flex: 1 1 0; min-width: 0; height: 40px; padding: 0 12px; border-radius: var(--radius); font: inherit; font-size: 13px; font-weight: 700;
+    color: var(--txt); background: var(--surface); border: 1px solid var(--line); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+    transition: background .2s, border-color .2s, transform .1s;
+  }
+  .btn:hover { background: var(--surface-hover); }
+  .btn:active { transform: scale(.97); }
+  .btn.primary { background: color-mix(in srgb, var(--a) 28%, transparent); border-color: color-mix(in srgb, var(--a) 60%, transparent); }
+  .btn.confirm { background: var(--warn); border-color: var(--warn); color: #111827; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn svg { width: 15px; height: 15px; flex: 0 0 auto; }
+  .sel { flex: 2 1 0; appearance: none; text-align: left; justify-content: flex-start; padding-right: 28px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--mut) 50%), linear-gradient(135deg, var(--mut) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 16px, calc(100% - 11px) 16px; background-size: 5px 5px; background-repeat: no-repeat; }
+  .sel option { color: #0f172a; }
+  .lock { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .lock svg { width: 14px; height: 14px; }
+
+  footer { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: var(--dim); padding-top: 2px; }
+  footer span:last-child { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Große Kacheln: großzügiger */
+  @container tile (min-width: 520px) and (min-height: 440px) {
+    .tile { gap: 20px; padding: 50px 26px 18px; }
+    .ring { width: 150px; height: 150px; } .pct b { font-size: 36px; }
+    .st { font-size: 30px; } .name { font-size: 20px; } .img { width: 60px; height: 60px; }
+    .hero { gap: 30px; }
+  }
+  @container tile (min-height: 540px) { .totals { display: grid; } .totals.hide { display: none; } }
+  @container tile (max-height: 450px) { .lastwork { display: none; } }
+  /* Kleinere Kacheln: Inhalte schrittweise ausblenden */
+  @container tile (max-height: 400px) { .chips { display: none; } }
+  @container tile (max-height: 300px) { .row { display: none; } }
+  @container tile (max-width: 560px) { .cmd span { display: none; } .cmd { padding: 0; } }
+  @container tile (max-height: 260px) { footer { display: none; } .model { display: none; } }
+  @container tile (max-height: 200px) { .actions { display: none; } .sub, .note { display: none; } }
+  @container tile (max-width: 330px) {
+    .tile { padding: 42px 12px 12px; gap: 12px; }
+    .ring { width: 84px; height: 84px; } .pct b { font-size: 21px; }
+    .st { font-size: 18px; } .name { font-size: 16px; } .img { width: 40px; height: 40px; border-radius: var(--radius); }
+    .badge span { display: none; } .badge { padding: 6px; }
+    .chips { grid-template-columns: 1fr 1fr; } .chip:last-child { display: none; }
+  }
+  @container tile (max-width: 220px) {
+    .hero { flex-direction: column; align-items: flex-start; gap: 8px; } .img { display: none; }
+  }
+</style>
+
+<div class="tile" id="tile">
+  <div class="grass"></div>
+  <header>
+    <div class="id">
+      <div class="img" id="img"></div>
+      <div style="min-width:0">
+        <div class="name" id="name">Mähroboter</div>
+        <div class="model" id="model"></div>
+      </div>
+    </div>
+    <div class="badge"><i></i><span id="badge">–</span></div>
+  </header>
+
+  <section class="hero">
+    <div class="ring">
+      <svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52"></circle><circle class="bar" id="bar" cx="60" cy="60" r="52"></circle></svg>
+      <div class="pct"><b id="pct">–</b><small id="batt">Akku</small></div>
+    </div>
+    <div class="state">
+      <div class="st" id="state">–</div>
+      <div class="bar2"></div>
+      <div class="sub" id="sub"></div>
+      <div class="note hide" id="note">⚠<span id="notetxt"></span></div>
+    </div>
+  </section>
+
+  <div class="chips">
+    <div class="chip"><span>Mähhöhe</span><b id="knife">–</b><em>&nbsp;</em></div>
+    <div class="chip"><span>WLAN</span><b><span class="sig" id="wsig"><i></i><i></i><i></i><i></i></span><span id="wifi">–</span></b><em id="wifiq">&nbsp;</em></div>
+    <div class="chip"><span>Mobilfunk</span><b><span class="sig" id="csig"><i></i><i></i><i></i><i></i></span><span id="cell">–</span></b><em id="cellq">&nbsp;</em></div>
+  </div>
+
+  <div class="totals hide" id="totals">
+    <div class="chip"><span>Einsätze</span><b id="tcount">–</b><em>gesamt</em></div>
+    <div class="chip"><span>Fläche</span><b id="tarea">–</b><em>gesamt gemäht</em></div>
+    <div class="chip"><span>CO₂</span><b id="tcarbon">–</b><em>eingespart</em></div>
+  </div>
+
+  <div class="lastwork hide" id="lastwork">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <span id="lastworktxt"></span>
+  </div>
+
+  <div class="lastwork hide past" id="pasterr">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/></svg>
+    <span id="pasterrtxt"></span>
+  </div>
+
+  <div class="actions" id="actions"></div>
+
+  <footer><span id="upd">Noch keine Aktualisierung</span><span id="msg"></span></footer>
+</div>
+
+<script>
+    // Hausstil: Farbschema der Kachel (0 = Symcon-Design, 1 = Dunkel, 2 = Hell)
+    function applyTheme(theme) {
+        var root = document.documentElement;
+        root.classList.toggle('theme-dark', theme === 1);
+        root.classList.toggle('theme-light', theme === 2);
+    }
+
+  (function () {
+    var S = null;          // letzter Zustand vom Modul
+    var confirmKey = null; // Button, der gerade eine Bestätigung erwartet
+    var confirmTimer = null;
+    var selectedTask = null;
+
+    var ICON = {
+      mower: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5c0-4.4 4-7.5 9-7.5s9 3.1 9 7.5z" fill="currentColor" fill-opacity=".18"/><path d="M9 9.4 10.5 6h3L15 9.4"/><circle cx="7" cy="18" r="2" fill="currentColor"/><circle cx="17" cy="18" r="2" fill="currentColor"/></svg>',
+      play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+      stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+      home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
+      cancel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+      lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'
+    };
+
+    // Betriebsstatus: 0 Offline, 1 Bereit, 2 Mäht, 3 Pausiert, 4 Lädt, 5 Heimfahrt, 6 Gerätefehler, 7 API/Cloud-Fehler, 8 Unbekannt
+    var OP = {
+      // Farben nach Hausstil: --ok #34b36b, --warn #e2a63b, --bad #e5484d, --info #4b8ef0, --off #8796a5
+      0: ['Offline', '#8796a5', 'OFFLINE'], 1: ['Bereit', '#34b36b', 'BEREIT'], 2: ['Mäht', '#34b36b', 'MÄHT'],
+      3: ['Pausiert', '#e2a63b', 'PAUSE'], 4: ['In der Station', '#4b8ef0', 'STATION'], 5: ['Heimfahrt', '#8b5cf6', 'HEIMFAHRT'],
+      6: ['Gerätefehler', '#e5484d', 'FEHLER'], 7: ['Cloud-Fehler', '#f97316', 'CLOUD'], 8: ['Unbekannt', '#8796a5', 'STATUS ?']
+    };
+
+    function $(id) { return document.getElementById(id); }
+    function txt(id, v) { $(id).textContent = v; }
+
+    function signal(id, dbm) {
+      var bars = dbm === 0 ? 0 : dbm >= -55 ? 4 : dbm >= -67 ? 3 : dbm >= -75 ? 2 : 1;
+      var items = $(id).children;
+      for (var i = 0; i < items.length; i++) items[i].className = i < bars ? 'on' : '';
+      return ['Keine Daten', 'Schwach', 'Mittel', 'Gut', 'Sehr gut'][bars];
+    }
+
+    function ago(ts) {
+      if (!ts) return 'Noch keine Aktualisierung';
+      var d = new Date(ts * 1000), now = new Date(), diff = Math.round((now - d) / 60000);
+      if (diff < 1) return 'Aktualisiert gerade eben';
+      if (diff < 60) return 'Aktualisiert vor ' + diff + ' Min.';
+      var same = d.toDateString() === now.toDateString();
+      return 'Aktualisiert ' + (same ? '' : d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ') +
+        d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function button(key, label, icon, cls, action, needsConfirm) {
+      var b = document.createElement('button');
+      b.className = 'btn ' + (cls || '');
+      b.innerHTML = (icon ? ICON[icon] : '') + '<span></span>';
+      b.lastChild.textContent = label;
+      if (confirmKey === key) { b.className = 'btn confirm'; b.lastChild.textContent = 'Wirklich?'; }
+      b.onclick = function () {
+        if (needsConfirm && confirmKey !== key) {
+          confirmKey = key; clearTimeout(confirmTimer);
+          confirmTimer = setTimeout(function () { confirmKey = null; render(); }, 4000);
+          render(); return;
+        }
+        confirmKey = null; clearTimeout(confirmTimer);
+        action(); render();
+        txt('msg', 'Befehl gesendet …');
+      };
+      return b;
+    }
+
+    function control(value) { requestAction('Control', value); }
+
+    function fmt(n, d) { return Number(n || 0).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+    function duration(min) { min = min | 0; return min >= 60 ? Math.floor(min / 60) + ' h ' + ('0' + (min % 60)).slice(-2) : min + ' Min.'; }
+    function when(ts) {
+      var d = new Date(ts * 1000), now = new Date(), y = new Date(now); y.setDate(now.getDate() - 1);
+      var t = d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      if (d.toDateString() === now.toDateString()) return 'heute ' + t;
+      if (d.toDateString() === y.toDateString()) return 'gestern ' + t;
+      return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + t;
+    }
+
+    function shortError(d) {
+      d = String(d || '');
+      if (/HTTP 5\d\d|nicht erreichbar|Verbindungsfehler|timeout/i.test(d)) return 'Cloud gerade nicht erreichbar';
+      if (/401|Anmeldung|invalid_client/i.test(d)) return 'Anmeldung fehlgeschlagen';
+      if (/nicht gefunden/i.test(d)) return 'Mäher im Konto nicht gefunden';
+      if (/Cloud-Instanz/i.test(d)) return 'Cloud-Instanz nicht aktiv';
+      return d.length > 70 ? d.substring(0, 67) + ' …' : d;
+    }
+
+    function cmd(key, label, icon, hot, action, needsConfirm) {
+      var b = document.createElement('button');
+      b.className = 'cmd' + (hot ? ' hot' : '');
+      b.title = label;
+      b.innerHTML = ICON[icon] + '<span></span>';
+      b.lastChild.textContent = label;
+      if (confirmKey === key) { b.className = 'cmd confirm'; b.lastChild.textContent = 'Wirklich?'; }
+      b.onclick = function () {
+        if (needsConfirm && confirmKey !== key) {
+          confirmKey = key; clearTimeout(confirmTimer);
+          confirmTimer = setTimeout(function () { confirmKey = null; render(); }, 4000);
+          render(); return;
+        }
+        confirmKey = null; clearTimeout(confirmTimer);
+        action(); render();
+        txt('msg', 'Befehl gesendet …');
+      };
+      return b;
+    }
+
+    function renderActions() {
+      var box = $('actions');
+      box.innerHTML = '';
+      if (!S || !S.active || !S.online || S.system === 5 && S.op !== 7) return;
+
+      if (!S.control) {
+        var l = document.createElement('div');
+        l.className = 'lock';
+        l.innerHTML = ICON.lock + '<span>Steuerung gesperrt – in der Instanz freigeben</span>';
+        box.appendChild(l);
+        return;
+      }
+
+      var op = S.op;
+      // Zeile 1: Aufgabe wählen und starten
+      if (S.tasks.length > 0) {
+        var row = document.createElement('div');
+        row.className = 'row';
+        var sel = document.createElement('select');
+        sel.className = 'sel';
+        S.tasks.forEach(function (t) {
+          var o = document.createElement('option');
+          o.value = t.value; o.textContent = t.name;
+          if (String(t.value) === String(selectedTask)) o.selected = true;
+          sel.appendChild(o);
+        });
+        selectedTask = sel.value;
+        sel.onchange = function () { selectedTask = sel.value; confirmKey = null; render(); };
+        row.appendChild(sel);
+        row.appendChild(button('start', 'Starten', 'play', (op === 1 || op === 4) ? 'primary' : '', function () { requestAction('Task', parseInt(selectedTask, 10)); }, true));
+        box.appendChild(row);
+      }
+
+      // Zeile 2: alle Befehle, die zum Zustand passenden hervorgehoben
+      var bar = document.createElement('div');
+      bar.className = 'cmdbar';
+      bar.appendChild(cmd('pause', 'Pause', 'pause', op === 2, function () { control(1); }));
+      bar.appendChild(cmd('resume', 'Fortsetzen', 'play', op === 3, function () { control(2); }, true));
+      bar.appendChild(cmd('stop', 'Stop', 'stop', op === 3, function () { control(3); }));
+      bar.appendChild(cmd('home', 'Zur Ladestation', 'home', op === 1 || op === 2 || op === 3, function () { control(4); }));
+      bar.appendChild(cmd('cancel', 'Heimfahrt abbrechen', 'cancel', op === 5, function () { control(5); }));
+      box.appendChild(bar);
+    }
+
+    function render() {
+      if (!S) return;
+      var tile = $('tile');
+      var info = OP[S.op] || OP[8];
+      var label = info[0], color = info[1], badge = info[2], sub = '';
+
+      var note = '';
+      if (!S.active) { label = 'Deaktiviert'; color = '#8796a5'; badge = 'AUS'; sub = 'Instanz ist ausgeschaltet'; }
+      else if (S.system === 0 && !S.lastSuccess) { label = 'Startet …'; color = '#8796a5'; badge = 'START'; }
+      else if (S.system === 5 && S.op !== 7) { label = 'Fehler'; color = '#e5484d'; badge = 'FEHLER'; sub = shortError(S.diagnostic); }
+      else if (!S.online && S.op !== 7) { label = 'Offline'; color = '#8796a5'; badge = 'OFFLINE'; sub = 'Schläft oder nicht erreichbar'; }
+      else if (S.op === 7) { sub = shortError(S.diagnostic); }
+      else if (S.op === 8 && S.raw) { sub = 'Rohstatus: ' + S.raw; }
+      else if (S.op === 4) { sub = (S.battery | 0) < 100 ? 'Lädt' : 'Voll geladen'; }
+      var noteErr = false, pastErr = '';
+      var errAge = S.error && S.error.time ? Date.now() / 1000 - S.error.time : Infinity;
+      if (S.active && S.error && S.error.time && (S.op === 6 || errAge < 1800)) {
+        // aktueller Fehler: Mäher meldet Fehlerzustand oder Meldung ist höchstens 30 Minuten alt
+        note = (S.op === 6 ? 'Gerätefehler: ' : 'Vor ' + Math.max(1, Math.round(errAge / 60)) + ' Min.: ') + S.error.text; noteErr = true;
+      } else if (S.active && errAge < 86400) {
+        // vergangene Meldung: nur als Verlauf mit Uhrzeit anzeigen
+        pastErr = S.error.text;
+      }
+      if (!noteErr && S.active && S.system === 3) {
+        var parts = ['Aufgaben', 'Statistik', 'Verlauf', 'Fehlerprotokoll'].filter(function (p) { return S.diagnostic.indexOf(p + ':') >= 0; });
+        note = (parts.length ? parts.join(', ') : 'Zusatzdaten') + ' gerade nicht abrufbar';
+      }
+
+      tile.style.setProperty('--a', color);
+      var bg = S.bg || { mode: 0, dim: 55 };
+      tile.classList.toggle('bg-image', bg.mode === 1);
+      tile.classList.toggle('bg-none', bg.mode === 2);
+      tile.style.setProperty('--shade', String((bg.dim | 0) / 100));
+      var batt = Math.max(0, Math.min(100, S.battery | 0));
+      var bcol = batt < 20 ? '#e5484d' : batt < 40 ? '#e2a63b' : '#34b36b';
+      tile.style.setProperty('--b', bcol);
+      tile.classList.toggle('dim', !S.active || !S.online);
+      tile.classList.toggle('mowing', S.active && S.online && S.op === 2);
+      tile.classList.toggle('live', S.active && S.online && (S.op === 2 || S.op === 5 || S.op === 4));
+
+      txt('name', S.title || 'Mähroboter');
+      txt('model', S.subtitle || 'Mammotion');
+      var img = $('img');
+      if (S.image) {
+        if (!img.firstChild || img.firstChild.tagName !== 'IMG' || img.firstChild.getAttribute('src') !== S.image) {
+          img.innerHTML = '';
+          var im = document.createElement('img');
+          im.alt = ''; im.src = S.image;
+          im.onerror = function () { img.innerHTML = ICON.mower; };
+          img.appendChild(im);
+        }
+      } else { img.innerHTML = ICON.mower; }
+
+      txt('badge', badge);
+      txt('state', label);
+      var s = $('sub');
+      s.textContent = sub || '';
+      s.className = 'sub' + ((S.system === 5 || S.op === 7) ? ' warn' : '');
+      txt('notetxt', note);
+      $('note').className = 'note' + (note ? '' : ' hide') + (noteErr ? ' err' : '');
+
+      var lw = S.last && S.last.end ? S.last : null;
+      if (lw) {
+        var results = ['unbekannt', 'läuft', 'pausiert', 'gestoppt', 'unterbrochen', 'fertig'];
+        txt('lastworktxt', '');
+        var span = $('lastworktxt');
+        span.appendChild(document.createTextNode('Zuletzt gemäht '));
+        var b = document.createElement('b'); b.textContent = when(lw.end); span.appendChild(b);
+        span.appendChild(document.createTextNode(' · ' + fmt(lw.area, 0) + ' m² · ' + duration(lw.minutes) + ' · ' + (results[lw.result] || '?')));
+      }
+      $('lastwork').className = 'lastwork' + (lw ? '' : ' hide');
+      var pe = $('pasterrtxt');
+      pe.textContent = '';
+      if (pastErr) {
+        pe.appendChild(document.createTextNode('Meldung '));
+        var eb = document.createElement('b'); eb.textContent = when(S.error.time); pe.appendChild(eb);
+        pe.appendChild(document.createTextNode(' · ' + pastErr));
+      }
+      $('pasterr').className = 'lastwork past' + (pastErr ? '' : ' hide');
+      var tt = S.totals && S.totals.count ? S.totals : null;
+      if (tt) {
+        txt('tcount', String(tt.count));
+        txt('tarea', tt.area >= 10000 ? fmt(tt.area / 10000, 1) + ' ha' : fmt(tt.area, 0) + ' m²');
+        txt('tcarbon', fmt(tt.carbon, 1) + ' kg');
+      }
+      $('totals').className = 'totals' + (tt ? '' : ' hide');
+
+      $('bar').style.strokeDashoffset = String(326.7 * (1 - batt / 100));
+      txt('pct', S.lastSuccess ? batt + '%' : '–');
+      txt('batt', batt >= 70 ? 'Gut' : batt >= 40 ? 'Ok' : batt >= 20 ? 'Niedrig' : 'Kritisch');
+
+      txt('knife', S.knife > 0 ? S.knife + ' mm' : '–');
+      txt('wifi', S.wifi ? S.wifi + ' dBm' : '–');
+      txt('wifiq', signal('wsig', S.wifi));
+      txt('cell', S.cell ? S.cell + ' dBm' : '–');
+      txt('cellq', signal('csig', S.cell));
+
+      txt('upd', ago(S.lastSuccess));
+      if ($('msg').textContent !== 'Befehl gesendet …') txt('msg', S.lastCommand || ('v' + S.version));
+      renderActions();
+    }
+
+    window.handleMessage = function (data) {
+      try { S = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { return; }
+      if (!S.tasks) S.tasks = [];
+      if (typeof S.theme === 'number') applyTheme(S.theme);
+      $('msg').textContent = '';
+      render();
+    };
+
+    setInterval(function () { if (S) txt('upd', ago(S.lastSuccess)); }, 30000);
+  })();
+</script>

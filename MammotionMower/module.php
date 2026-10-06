@@ -17,7 +17,7 @@ class MammotionMower extends IPSModuleStrict
 {
     use MammotionPresentationHelper;
 
-    private const MODULE_VERSION = '1.0';
+    private const MODULE_VERSION = '1.1';
     private const MODULE_BUILD = 1;
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
@@ -89,7 +89,8 @@ class MammotionMower extends IPSModuleStrict
         $this->RegisterPropertyBoolean('Active', true);
         $this->RegisterPropertyBoolean('EnableControl', false);
         $this->RegisterPropertyBoolean('EnableTile', true);
-        $this->RegisterPropertyInteger('TileBackgroundMode', 0);   // 0 Farbverlauf, 1 Medienobjekt, 2 transparent
+        $this->RegisterPropertyInteger('TileTheme', 0);            // 0 = Symcon-Design, 1 = Dunkel, 2 = Hell
+        $this->RegisterPropertyInteger('TileBackgroundMode', 0);   // 0 Schimmer in Zustandsfarbe, 1 Medienobjekt, 2 keiner
         $this->RegisterPropertyInteger('TileBackgroundMedia', 0);
         $this->RegisterPropertyInteger('TileBackgroundDim', 55);
         $this->RegisterPropertyBoolean('EnableReports', true);
@@ -1057,7 +1058,7 @@ class MammotionMower extends IPSModuleStrict
 
     public function GetVisualizationTile(): string
     {
-        $html = (string) file_get_contents(__DIR__ . '/module.html');
+        $html = (string) file_get_contents(__DIR__ . '/tile.html');
         // Hintergrundbild nur einmal beim Laden der Kachel übertragen, nicht bei jedem Update
         if ($this->ReadPropertyInteger('TileBackgroundMode') === 1) {
             $image = $this->BuildBackgroundImage();
@@ -1190,6 +1191,7 @@ class MammotionMower extends IPSModuleStrict
                 'text' => (string) $this->GetValue('LastErrorText'),
                 'time' => (int) $this->GetValue('LastErrorTime')
             ] : null,
+            'theme'       => $this->ReadPropertyInteger('TileTheme'),
             'version'     => self::MODULE_VERSION,
             'bg'          => [
                 'mode' => $this->ReadPropertyInteger('TileBackgroundMode') === 1 && $this->BackgroundError() !== '' ? 0 : $this->ReadPropertyInteger('TileBackgroundMode'),
