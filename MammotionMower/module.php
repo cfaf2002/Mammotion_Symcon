@@ -17,8 +17,8 @@ class MammotionMower extends IPSModuleStrict
 {
     use MammotionPresentationHelper;
 
-    private const MODULE_VERSION = '1.2';
-    private const MODULE_BUILD = 4;
+    private const MODULE_VERSION = '1.3';
+    private const MODULE_BUILD = 5;
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
 
@@ -79,6 +79,12 @@ class MammotionMower extends IPSModuleStrict
 
     private const ACTIONS = [1 => 'PAUSE', 2 => 'RESUME', 3 => 'STOP', 4 => 'RETURN', 5 => 'CANCEL_RETURN'];
 
+    // Wetter: 0 = aus, 1 = Starts aus Symcon sperren, 2 = zusätzlich laufenden Mähvorgang zur Station schicken
+    private const WEATHER_OFF = 0;
+    private const WEATHER_BLOCK = 1;
+    private const WEATHER_RETURN = 2;
+    private const WEATHER_BLOCKED_ACTIONS = ['START', 'RESUME'];
+
     public function Create(): void
     {
         parent::Create();
@@ -94,6 +100,11 @@ class MammotionMower extends IPSModuleStrict
         $this->RegisterPropertyInteger('TileBackgroundMedia', 0);
         $this->RegisterPropertyInteger('TileBackgroundDim', 55);
         $this->RegisterPropertyBoolean('EnableReports', true);
+        $this->RegisterPropertyInteger('WeatherMode', self::WEATHER_OFF);
+        $this->RegisterPropertyInteger('WeatherRainSoonVariable', 0);   // Ja/Nein: Regen in Kürze
+        $this->RegisterPropertyInteger('WeatherRainRecentVariable', 0); // mm: Niederschlag zuletzt
+        $this->RegisterPropertyFloat('WeatherWetThreshold', 0.5);       // mm, ab hier gilt der Rasen als nass
+        $this->RegisterPropertyFloat('WeatherDryingHours', 2.0);        // Stunden nach dem letzten Überschreiten
 
         $this->RegisterAttributeString('ResolvedDeviceID', '');
         $this->RegisterAttributeString('DeviceNickname', '');
@@ -104,12 +115,17 @@ class MammotionMower extends IPSModuleStrict
         $this->RegisterAttributeString('LastWorkId', '');
         $this->RegisterAttributeString('RequestVariants', '{}');
         $this->RegisterAttributeBoolean('LegacyCleanupDone', false);
+        // Wetter: -1 = noch nie nass, 0 = gerade nass, > 0 = Zeitpunkt, ab dem der Grenzwert unterschritten ist
+        $this->RegisterAttributeInteger('WeatherDrySince', -1);
+        // Wetter: Gründe, für die die Heimfahrt schon gesendet wurde (einmal je Ereignis)
+        $this->RegisterAttributeString('WeatherHandled', '');
         // Flüchtige Laufzeitzustände (Sperre, Wiederholungen, Takt der Zusatzdaten) liegen im Buffer:
         // Sie werden nicht bei jedem Abruf auf die Festplatte geschrieben und sind nach einem Neustart sauber leer.
 
         $this->RegisterTimer('UpdateTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerUpdate", 0);');
         $this->RegisterTimer('RetryTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerRetry", 0);');
         $this->RegisterTimer('DelayedRefreshTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerDelayed", 0);');
+        $this->RegisterTimer('WeatherTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerWeather", 0);');
 
         $this->RegisterMessage(0, IPS_KERNELSTARTED);
     }
@@ -139,7 +155,8 @@ class MammotionMower extends IPSModuleStrict
         $this->MaintainVariables();
         $this->CleanupLegacyProfiles();
         $this->SetVisualizationType($this->ReadPropertyBoolean('EnableTile') ? 1 : 0);
-        $this->UpdateMediaReference();
+        $this->UpdateReferences();
+        $this->RegisterWeatherMessages();
         // Die Abrufsperre bleibt bestehen: Ein gerade laufender Abruf darf nicht durch einen zweiten
         // überholt werden. Eine verwaiste Sperre verfällt nach REFRESH_LOCK_TIMEOUT von selbst.
         $this->ResetRetry();
@@ -155,12 +172,19 @@ class MammotionMower extends IPSModuleStrict
             return;
         }
         $this->Initialize();
+        $this->UpdateWeather();
     }
 
     public function MessageSink(int $TimeStamp, int $SenderID, int $Message, array $Data): void
     {
         if ($Message === IPS_KERNELSTARTED) {
             $this->Initialize();
+            $this->UpdateWeather();
+            return;
+        }
+        // Wetter: sofort auf die gewählten Variablen reagieren, nicht erst beim nächsten Abruf
+        if ($Message === VM_UPDATE && in_array($SenderID, $this->WeatherVariableIDs(), true)) {
+            $this->UpdateWeather();
         }
     }
 
@@ -183,6 +207,10 @@ class MammotionMower extends IPSModuleStrict
             case 'TimerDelayed':
                 $this->SetTimerInterval('DelayedRefreshTimer', 0);
                 $this->Refresh();
+                return;
+            case 'TimerWeather':
+                // Trocknungszeit abgelaufen: Sperre ohne Warten auf den nächsten Abruf aufheben
+                $this->UpdateWeather();
                 return;
             case 'Control':
                 $v = (int) $Value;
@@ -332,6 +360,20 @@ class MammotionMower extends IPSModuleStrict
             $lines[] = 'Letzter Befehl: ' . $lastCommand;
         }
         $lines[] = 'Schreibbefehle: ' . ($this->ReadPropertyBoolean('EnableControl') ? '🔓 freigegeben' : '🔒 gesperrt');
+        $weatherMode = $this->ReadPropertyInteger('WeatherMode');
+        if ($weatherMode !== self::WEATHER_OFF) {
+            $weather = $this->ReadWeather(false);
+            $line = 'Wetter: ' . ($weather['lock'] ? '☔ Mähsperre – ' . implode(' · ', $weather['reasons']) : '✅ keine Mähsperre');
+            if (count($weather['missing']) > 0) {
+                $line .= ' (⚠️ Variable fehlt: ' . implode(', ', $weather['missing']) . ')';
+            } elseif ($weather['sources'] === 0) {
+                $line .= ' (⚠️ keine Wetter-Variable gewählt)';
+            }
+            if ($weatherMode === self::WEATHER_RETURN && !$this->ReadPropertyBoolean('EnableControl')) {
+                $line .= ' – Heimfahrt bei Regen braucht freigegebene Schreibbefehle';
+            }
+            $lines[] = $line;
+        }
         if ($this->ReadPropertyBoolean('EnableTile')) {
             $mode = $this->ReadPropertyInteger('TileBackgroundMode');
             if ($mode === 1) {
@@ -526,6 +568,8 @@ class MammotionMower extends IPSModuleStrict
             return false;
         } finally {
             $this->ReleaseRefreshLock();
+            // Wetter mit dem frischen Betriebsstatus prüfen (Heimfahrt nur, wenn der Mäher gerade mäht)
+            $this->UpdateWeather();
             $this->UpdateTile();
         }
     }
@@ -689,6 +733,16 @@ class MammotionMower extends IPSModuleStrict
         }
         if (!$this->ReadPropertyBoolean('EnableControl')) {
             throw new RuntimeException('Schreibbefehle sind nicht freigegeben.');
+        }
+        if (in_array($action, self::WEATHER_BLOCKED_ACTIONS, true) && $this->ReadPropertyInteger('WeatherMode') !== self::WEATHER_OFF) {
+            $weather = $this->ReadWeather();
+            if ($weather['lock']) {
+                $message = 'Mähsperre Wetter: ' . implode(' · ', $weather['reasons']) . '. ' . ($action === 'START' ? 'Aufgabe starten' : 'Fortsetzen')
+                    . ' ist aus Symcon gesperrt, bis das Wetter es wieder zulässt.';
+                $this->SetValueIfChanged('LastCommand', $action . ' gesperrt (' . date('d.m.Y H:i:s') . '): ' . $message);
+                $this->UpdateTile();
+                throw new RuntimeException($message);
+            }
         }
         if (!$this->HasActiveParent()) {
             throw new RuntimeException('Cloud-Instanz ist nicht verbunden oder nicht aktiv.');
@@ -967,6 +1021,7 @@ class MammotionMower extends IPSModuleStrict
     private function MaintainVariables(): void
     {
         $reports = $this->ReadPropertyBoolean('EnableReports');
+        $weather = $this->ReadPropertyInteger('WeatherMode') !== self::WEATHER_OFF;
         $green = 0x00AA00; $grey = 0x808080; $red = 0xFF0000; $orange = 0xFF8800; $yellow = 0xFFCC00; $blue = 0x3399FF;
 
         $operation = $this->PresentStates('robot', [
@@ -1039,6 +1094,8 @@ class MammotionMower extends IPSModuleStrict
             ['CellularRSSI', 'Mobilfunk RSSI', VARIABLETYPE_INTEGER, $this->PresentValue('signal', ' dBm'), 100, true],
             ['Control', 'Steuerung', VARIABLETYPE_INTEGER, $control, 110, true],
             ['Task', 'Aufgabe starten', VARIABLETYPE_INTEGER, $this->TaskPresentation(), 120, true],
+            ['WeatherLock', 'Mähsperre Wetter', VARIABLETYPE_BOOLEAN, $this->PresentBool('umbrella', 'Frei', $green, 'Gesperrt', $blue), 125, $weather],
+            ['WeatherLockReason', 'Mähsperre Wetter – Grund', VARIABLETYPE_STRING, $this->PresentValue('cloud-rain'), 126, $weather],
             ['LastWorkEnd', 'Letzter Einsatz', VARIABLETYPE_INTEGER, $this->PresentDateTime(), 130, $reports],
             ['LastWorkResult', 'Letzter Einsatz – Ergebnis', VARIABLETYPE_INTEGER, $workResult, 131, $reports],
             ['LastWorkType', 'Letzter Einsatz – Art', VARIABLETYPE_INTEGER, $workType, 132, $reports],
@@ -1079,6 +1136,153 @@ class MammotionMower extends IPSModuleStrict
             $this->RemoveUnusedProfiles(self::LEGACY_PROFILES);
             $this->WriteAttributeBoolean('LegacyCleanupDone', true);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Wetter: Mähsperre bei Regen in Kürze oder nassem Rasen
+    // ------------------------------------------------------------------
+
+    /**
+     * Gewählte und vorhandene Wetter-Variablen (leer, wenn die Funktion aus ist).
+     */
+    private function WeatherVariableIDs(): array
+    {
+        if ($this->ReadPropertyInteger('WeatherMode') === self::WEATHER_OFF) {
+            return [];
+        }
+        $ids = [];
+        foreach (['WeatherRainSoonVariable', 'WeatherRainRecentVariable'] as $property) {
+            $id = $this->ReadPropertyInteger($property);
+            if ($id > 0 && IPS_VariableExists($id)) {
+                $ids[] = $id;
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Meldet nur die aktuell gewählten Wetter-Variablen an (frühere Auswahl wird abgemeldet).
+     */
+    private function RegisterWeatherMessages(): void
+    {
+        foreach ($this->GetMessageList() as $senderID => $messages) {
+            if (in_array(VM_UPDATE, $messages, true)) {
+                $this->UnregisterMessage((int) $senderID, VM_UPDATE);
+            }
+        }
+        foreach ($this->WeatherVariableIDs() as $variableID) {
+            $this->RegisterMessage($variableID, VM_UPDATE);
+        }
+        if ($this->ReadPropertyInteger('WeatherMode') === self::WEATHER_OFF) {
+            $this->SetTimerInterval('WeatherTimer', 0);
+            $this->WriteAttributeIfChanged('WeatherHandled', '');
+        }
+    }
+
+    /**
+     * Liest die gewählten Variablen und bestimmt die Sperre.
+     * Merkt sich (bei $track), wann der Grenzwert unterschritten wurde – daraus ergibt sich die Trocknungszeit.
+     *
+     * @return array{lock: bool, keys: array, reasons: array, until: int, missing: array, sources: int}
+     */
+    private function ReadWeather(bool $track = true): array
+    {
+        $state = ['lock' => false, 'keys' => [], 'reasons' => [], 'until' => 0, 'missing' => [], 'sources' => 0];
+        if ($this->ReadPropertyInteger('WeatherMode') === self::WEATHER_OFF) {
+            return $state;
+        }
+
+        $soonID = $this->ReadPropertyInteger('WeatherRainSoonVariable');
+        if ($soonID > 0) {
+            if (!IPS_VariableExists($soonID)) {
+                $state['missing'][] = 'Regen in Kürze';
+            } else {
+                $state['sources']++;
+                if ((bool) GetValue($soonID)) {
+                    $state['keys'][] = 'rain';
+                    $state['reasons'][] = 'Regen in Kürze';
+                }
+            }
+        }
+
+        $recentID = $this->ReadPropertyInteger('WeatherRainRecentVariable');
+        if ($recentID > 0) {
+            if (!IPS_VariableExists($recentID)) {
+                $state['missing'][] = 'Niederschlag zuletzt';
+            } else {
+                $state['sources']++;
+                $mm = (float) GetValue($recentID);
+                $threshold = max(0.0, $this->ReadPropertyFloat('WeatherWetThreshold'));
+                $drySince = $this->ReadAttributeInteger('WeatherDrySince');
+                if ($mm > 0 && $mm >= $threshold) {
+                    $drySince = 0;
+                    $state['keys'][] = 'wet';
+                    $state['reasons'][] = 'Rasen nass (' . number_format($mm, 1, ',', '.') . ' mm)';
+                } else {
+                    if ($drySince === 0) {
+                        // Gerade unter den Grenzwert gefallen: Zeitpunkt der Änderung der Variable, sonst jetzt
+                        $changed = (int) (IPS_GetVariable($recentID)['VariableChanged'] ?? 0);
+                        $drySince = ($changed > 0 && $changed <= time()) ? $changed : time();
+                    }
+                    $until = $drySince > 0 ? $drySince + (int) round(max(0.0, $this->ReadPropertyFloat('WeatherDryingHours')) * 3600) : 0;
+                    if ($until > time()) {
+                        $state['keys'][] = 'wet';
+                        $state['reasons'][] = 'Rasen trocknet bis ' . (date('Y-m-d', $until) === date('Y-m-d') ? date('H:i', $until) : date('d.m. H:i', $until)) . ' Uhr';
+                        $state['until'] = $until;
+                    }
+                }
+                if ($track && $drySince !== $this->ReadAttributeInteger('WeatherDrySince')) {
+                    $this->WriteAttributeInteger('WeatherDrySince', $drySince);
+                }
+            }
+        }
+
+        $state['lock'] = count($state['keys']) > 0;
+        return $state;
+    }
+
+    /**
+     * Aktualisiert Sperre, Grund und Trocknungs-Timer; im Modus 2 einmal je Ereignis die Heimfahrt senden.
+     */
+    private function UpdateWeather(): void
+    {
+        if ($this->ReadPropertyInteger('WeatherMode') === self::WEATHER_OFF) {
+            return;
+        }
+        $semaphore = 'MAMMO_Weather_' . $this->InstanceID;
+        if (!IPS_SemaphoreEnter($semaphore, 5000)) {
+            return;
+        }
+        try {
+            $weather = $this->ReadWeather();
+            $reason = implode(' · ', $weather['reasons']);
+            $this->SetValueIfChanged('WeatherLock', $weather['lock']);
+            $this->SetValueIfChanged('WeatherLockReason', $weather['lock'] ? $reason : 'Keine Sperre');
+            $this->SetTimerInterval('WeatherTimer', $weather['until'] > time() ? ($weather['until'] - time() + 5) * 1000 : 0);
+
+            // Ein Ereignis gilt, solange sein Grund besteht; endet es, ist es beim nächsten Mal wieder neu
+            $handled = array_values(array_intersect(array_filter(explode(',', $this->ReadAttributeString('WeatherHandled'))), $weather['keys']));
+            $new = array_diff($weather['keys'], $handled);
+            if (count($new) > 0 && $this->ReadPropertyInteger('WeatherMode') === self::WEATHER_RETURN
+                && $this->ReadPropertyBoolean('Active') && $this->ReadPropertyBoolean('EnableControl')
+                && (int) $this->GetValue('OperationStatus') === self::OP_MOWING) {
+                // Auch bei Fehlschlag nicht bei jedem Abruf erneut senden
+                $handled = $weather['keys'];
+                try {
+                    $this->SendDebug('Wetter', 'Mäher mäht, Mähsperre: ' . $reason . ' – sende Heimfahrt', 0);
+                    if ($this->SendCommand('RETURN')) {
+                        $this->SetValueIfChanged('LastCommand', 'RETURN gesendet – Mähsperre Wetter: ' . $reason . ' (' . date('d.m.Y H:i:s') . ')');
+                    }
+                } catch (Throwable $e) {
+                    $this->SendDebug('Wetter', 'Heimfahrt fehlgeschlagen: ' . $e->getMessage(), 0);
+                }
+            }
+            sort($handled);
+            $this->WriteAttributeIfChanged('WeatherHandled', implode(',', $handled));
+        } finally {
+            IPS_SemaphoreLeave($semaphore);
+        }
+        $this->UpdateTile();
     }
 
     // ------------------------------------------------------------------
@@ -1144,9 +1348,9 @@ class MammotionMower extends IPSModuleStrict
     }
 
     /**
-     * Meldet das Medienobjekt als Referenz an, damit IP-Symcon beim Löschen warnt.
+     * Meldet Medienobjekt und Wetter-Variablen als Referenz an, damit IP-Symcon beim Löschen warnt.
      */
-    private function UpdateMediaReference(): void
+    private function UpdateReferences(): void
     {
         foreach ($this->GetReferenceList() as $reference) {
             $this->UnregisterReference($reference);
@@ -1154,6 +1358,9 @@ class MammotionMower extends IPSModuleStrict
         $mediaID = $this->ReadPropertyInteger('TileBackgroundMedia');
         if ($this->ReadPropertyInteger('TileBackgroundMode') === 1 && $mediaID > 0 && IPS_MediaExists($mediaID)) {
             $this->RegisterReference($mediaID);
+        }
+        foreach ($this->WeatherVariableIDs() as $variableID) {
+            $this->RegisterReference($variableID);
         }
     }
 
@@ -1219,6 +1426,10 @@ class MammotionMower extends IPSModuleStrict
             'error'       => $this->ReadPropertyBoolean('EnableReports') ? [
                 'text' => (string) $this->GetValue('LastErrorText'),
                 'time' => (int) $this->GetValue('LastErrorTime')
+            ] : null,
+            'weather'     => $this->ReadPropertyInteger('WeatherMode') !== self::WEATHER_OFF && (bool) $this->GetValue('WeatherLock') ? [
+                'reason' => (string) $this->GetValue('WeatherLockReason'),
+                'mode'   => $this->ReadPropertyInteger('WeatherMode')
             ] : null,
             'theme'       => $this->ReadPropertyInteger('TileTheme'),
             'version'     => self::MODULE_VERSION,

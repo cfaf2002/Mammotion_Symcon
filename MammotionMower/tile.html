@@ -131,6 +131,9 @@
     font-size: 11px; color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); max-width: 100%; }
   .note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .note:empty, .note.hide { display: none; }
+  /* Mähsperre Wetter: kurzer Hinweis in der Infofarbe (nur Anzeige, kein Bedienelement) */
+  .note.wx { color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); border-color: color-mix(in srgb, var(--info) 40%, transparent); }
+  .note.wx svg { width: 13px; height: 13px; flex: 0 0 auto; }
 
   .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   .chip { padding: 11px 12px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid var(--line); min-width: 0; }
@@ -238,6 +241,7 @@
       <div class="bar2"></div>
       <div class="sub" id="sub"></div>
       <div class="note hide" id="note">⚠<span id="notetxt"></span></div>
+      <div class="note wx hide" id="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 12v7a2 2 0 0 0 4 0"/></svg><span id="wxtxt"></span></div>
     </div>
   </section>
 
@@ -485,6 +489,11 @@
       s.className = 'sub' + ((S.system === 5 || S.op === 7) ? ' warn' : '');
       txt('notetxt', note);
       $('note').className = 'note' + (note ? '' : ' hide') + (noteErr ? ' err' : '');
+      // Mähsperre Wetter: Grund nur als Text (textContent)
+      var wx = S.active && S.weather && S.weather.reason ? 'Mähsperre: ' + S.weather.reason : '';
+      txt('wxtxt', wx);
+      $('wx').className = 'note wx' + (wx ? '' : ' hide');
+      $('wx').title = wx;
 
       var lw = S.last && S.last.end ? S.last : null;
       if (lw) {

@@ -119,6 +119,76 @@
           "caption": "Schreibbefehle freigeben (Aufgabe starten, Pause, Stop, Heimfahrt)"
         }
       ]
+    },
+    {
+      "type": "ExpansionPanel",
+      "caption": "Wetter",
+      "expanded": false,
+      "items": [
+        {
+          "type": "Label",
+          "caption": "Mähsperre bei Regen in Kürze oder nassem Rasen. Die Werte kommen aus frei wählbaren Variablen, z. B. „Regen in Kürze“ und „Niederschlag zuletzt“ aus dem Wetter-Modul. Ohne gewählte Variable bleibt die Funktion wirkungslos."
+        },
+        {
+          "type": "Select",
+          "name": "WeatherMode",
+          "caption": "Wetter berücksichtigen",
+          "options": [
+            {
+              "caption": "Aus",
+              "value": 0
+            },
+            {
+              "caption": "Starts aus Symcon sperren (Aufgabe starten, Fortsetzen)",
+              "value": 1
+            },
+            {
+              "caption": "Zusätzlich einen laufenden Mähvorgang zur Station schicken",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "type": "SelectVariable",
+          "name": "WeatherRainSoonVariable",
+          "caption": "Regen in Kürze (Ja/Nein)",
+          "validVariableTypes": [
+            0
+          ],
+          "width": "400px"
+        },
+        {
+          "type": "SelectVariable",
+          "name": "WeatherRainRecentVariable",
+          "caption": "Niederschlag zuletzt (mm)",
+          "validVariableTypes": [
+            1,
+            2
+          ],
+          "width": "400px"
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "WeatherWetThreshold",
+          "caption": "Rasen gilt als nass ab",
+          "suffix": "mm",
+          "digits": 1,
+          "minimum": 0
+        },
+        {
+          "type": "NumberSpinner",
+          "name": "WeatherDryingHours",
+          "caption": "Trocknungszeit nach dem letzten Überschreiten",
+          "suffix": "Stunden",
+          "digits": 1,
+          "minimum": 0,
+          "maximum": 48
+        },
+        {
+          "type": "Label",
+          "caption": "Die Heimfahrt (Modus 2) wird nur gesendet, wenn Schreibbefehle freigegeben sind und der Mäher gerade mäht – einmal je Ereignis, nicht bei jedem Abruf. Starts über die Mammotion-App oder Zeitpläne im Mäher sperrt das Modul nicht."
+        }
+      ]
     }
   ],
   "actions": [

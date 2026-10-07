@@ -18,8 +18,8 @@ class MammotionCloud extends IPSModuleStrict
 {
     use MammotionPresentationHelper;
 
-    private const MODULE_VERSION = '1.2';
-    private const MODULE_BUILD = 4;
+    private const MODULE_VERSION = '1.3';
+    private const MODULE_BUILD = 5;
     private const AUTH_URL = 'https://id.mammotion.com/oauth2/token';
     private const API_URL = 'https://api-open.mammotion.com';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';

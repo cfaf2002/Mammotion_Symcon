@@ -2,6 +2,15 @@
 
 Alle relevanten Änderungen werden in dieser Datei dokumentiert.
 
+## [1.3] - 2026-10-07
+
+Build 5.
+
+- Mäher: neuer Block **Wetter** (ab Werk aus): Mähsperre bei „Regen in Kürze“ oder nassem Rasen (Niederschlag zuletzt ab 0,5 mm, danach 2 Stunden Trocknungszeit) aus frei wählbaren Variablen, z. B. aus dem Wetter-Modul
+- Mäher: Modus 1 sperrt **Aufgabe starten** und **Fortsetzen** aus Symcon mit verständlicher Meldung; Modus 2 schickt zusätzlich einen laufenden Mähvorgang einmal je Ereignis zur Station (nur mit freigegebenen Schreibbefehlen)
+- Mäher: neue Variablen **Mähsperre Wetter** und **Mähsperre Wetter – Grund**; Reaktion sofort auf Änderungen der gewählten Variablen
+- Kachel: kurzer Hinweis „Mähsperre: …“, solange die Sperre aktiv ist
+
 ## [1.2] - 2026-10-07
 
 Build 4.

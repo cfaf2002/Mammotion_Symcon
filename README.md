@@ -2,7 +2,7 @@
 
 [![IP-Symcon ab 9.0](https://img.shields.io/badge/IP--Symcon-ab_9.0-0b6fb3.svg)](https://www.symcon.de)
 [![Optimiert für Symcon 9.0](https://img.shields.io/badge/optimiert_f%C3%BCr-Symcon_9.0-0b6fb3.svg)](https://www.symcon.de/de/service/dokumentation/installation/migrationen/v81-v90-q1-2026/)
-[![Modul-Version 1.2 (Build 4)](https://img.shields.io/badge/Modul--Version-1.2_(Build_4)-informational.svg)](library.json)
+[![Modul-Version 1.3 (Build 5)](https://img.shields.io/badge/Modul--Version-1.3_(Build_5)-informational.svg)](library.json)
 [![Tests](https://github.com/cfaf2002/Mammotion_Symcon/actions/workflows/tests.yml/badge.svg)](https://github.com/cfaf2002/Mammotion_Symcon/actions/workflows/tests.yml)
 [![PHP 8.3 und 8.5](https://img.shields.io/badge/PHP-8.3_%7C_8.5-777bb4.svg?logo=php&logoColor=white)](https://www.php.net)
 [![SDK: IPSModuleStrict](https://img.shields.io/badge/SDK-IPSModuleStrict-success.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/module/)
@@ -82,6 +82,7 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 - Aufgaben aus der Mammotion-App, eigene Aufgabenliste je Mäher
 - Steuerung: Aufgabe starten, Pause, Fortsetzen, Stop, zur Ladestation, Heimfahrt abbrechen
 - Schreibbefehle standardmäßig gesperrt
+- Wetter (ab Werk aus): Mähsperre bei Regen in Kürze oder nassem Rasen aus frei wählbaren Variablen, wahlweise mit Heimfahrt eines laufenden Mähvorgangs
 - Statusabruf fünf Sekunden nach jedem Befehl
 - Systemzustand, Diagnose und Zeitstempel
 - Sperre gegen parallele Abrufe mit automatischer Freigabe
@@ -241,6 +242,7 @@ Bereits angelegte Mäher sind mit ihrer Instanz verknüpft. Instanzen, deren Dev
 | Kachel-Visualisierung (HTML) aktiv | zeigt die Instanz als eigene Kachel; aus = Standardkachel mit Variablenliste | an |
 | Statistik, Einsatzverlauf und Fehlerprotokoll abrufen | legt die Variablen dafür an und fragt sie alle 15 Minuten ab | an |
 | Schreibbefehle freigeben | erlaubt reale Steuerbefehle | aus |
+| Wetter berücksichtigen | Mähsperre bei Regen oder nassem Rasen, siehe [Wetter](#wetter) | Aus |
 
 Der Block **Status** zeigt beim Öffnen der Instanz Cloud-Verbindung, Mäher mit Modell, Name in der App und Device-ID, Systemzustand, Diagnose, letzte Aktualisierung, letzten Einsatz, Gerätefehler, letzten Befehl und ob Schreibbefehle freigegeben sind.
 
@@ -277,6 +279,8 @@ Mammotion Mäher
 ├── Mobilfunk RSSI
 ├── Steuerung
 ├── Aufgabe starten
+├── Mähsperre Wetter                     (nur mit Wetter; Frei, Gesperrt)
+├── Mähsperre Wetter – Grund             (nur mit Wetter)
 ├── Letzter Einsatz                      (Zeitpunkt Ende)
 ├── Letzter Einsatz – Ergebnis           (Läuft, Pausiert, Vom Nutzer gestoppt, Unterbrochen, Abgeschlossen)
 ├── Letzter Einsatz – Art                (Einzeleinsatz, Zeitplan, Punktmähen, Fortsetzung)
@@ -352,6 +356,24 @@ Schreibbefehle freigeben = Ja  (Mäher-Instanz)
 
 Das Ergebnis steht in **Letzter Befehl**. Fünf Sekunden nach einem Befehl wird der Status automatisch neu gelesen.
 
+### Wetter
+
+Der Mäher soll nicht losfahren, wenn gleich Regen kommt oder der Rasen noch nass ist. Die Wetterdaten kommen aus **frei wählbaren Variablen** (Block **Wetter** der Instanz), zum Beispiel aus dem Wetter-Modul (Gruppe „Vorhersage“): **Regen in Kürze** (`RainSoon`, Ja/Nein) und **Niederschlag zuletzt** (`RainRecent`, mm der letzten 6 Stunden). Jede andere Wetterquelle mit einer Ja/Nein- bzw. mm-Variable geht ebenso. Ab Werk ist die Funktion aus; ohne gewählte Variable bleibt sie wirkungslos.
+
+| Einstellung | Bedeutung | Standard |
+|---|---|---|
+| Wetter berücksichtigen | 0 = Aus; 1 = Starts aus Symcon sperren (**Aufgabe starten**, **Fortsetzen**); 2 = zusätzlich einen laufenden Mähvorgang zur Station schicken | Aus |
+| Regen in Kürze (Ja/Nein) | Ja = Mähsperre | keine |
+| Niederschlag zuletzt (mm) | ab dem Grenzwert gilt der Rasen als nass | keine |
+| Rasen gilt als nass ab | Grenzwert für **Niederschlag zuletzt** | 0,5 mm |
+| Trocknungszeit nach dem letzten Überschreiten | die Sperre bleibt so lange nach dem Unterschreiten des Grenzwerts bestehen | 2 Stunden |
+
+- Die Variable **Mähsperre Wetter** zeigt die Sperre, **Mähsperre Wetter – Grund** den Grund („Regen in Kürze“, „Rasen nass (1,2 mm)“, „Rasen trocknet bis 15:40 Uhr“). Die Kachel blendet einen kurzen blauen Hinweis „Mähsperre: …“ ein.
+- Das Modul reagiert sofort auf Änderungen der gewählten Variablen, nicht erst beim nächsten Abruf; nach Ablauf der Trocknungszeit hebt ein Timer die Sperre auf.
+- Ein gesperrter Start wirft eine verständliche Meldung („Mähsperre Wetter: Regen in Kürze. Aufgabe starten ist aus Symcon gesperrt …“) und steht in **Letzter Befehl**. Pause, Stop und Heimfahrt bleiben immer möglich.
+- **Modus 2** sendet **Zur Ladestation** nur, wenn **Schreibbefehle freigeben** an ist und der Mäher gerade mäht – einmal je Ereignis (Regen in Kürze bzw. Rasen nass), nicht bei jedem Abruf. Startet der Mäher während einer Sperre (z. B. per Zeitplan), wird er einmal zurückgeschickt; startet ihn jemand danach erneut in der App, bleibt es dabei, bis ein neues Ereignis beginnt.
+- Starts über die Mammotion-App oder Zeitpläne im Mäher selbst kann das Modul nicht sperren.
+
 ## Kachel
 
 Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit (HTML-SDK). Die Instanz einfach in die Visualisierung ziehen, eine zusätzliche Variable ist nicht nötig. Die Kachel aktualisiert sich live nach jedem Abruf und jedem Befehl.
@@ -362,6 +384,7 @@ Die Mäher-Instanz bringt eine eigene Kachel für die Kachel-Visualisierung mit 
 - Status-Badge, pulsierend beim Mähen, Laden und bei der Heimfahrt
 - Akku-Ring mit Farbwechsel (grün, gelb unter 40 %, rot unter 20 %)
 - Mähhöhe, WLAN und Mobilfunk mit Signalbalken und Qualitätsbewertung
+- blauer Hinweis „Mähsperre: …“ mit Grund, solange die [Mähsperre Wetter](#wetter) aktiv ist
 - kurze Hinweise bei Fehlern, Offline oder unbekanntem Rohstatus, gelber Hinweis-Chip wenn Zusatzdaten gerade nicht abrufbar sind
 - Gerätefehler aus dem Fehlerprotokoll: rot nur bei aktivem Fehlerzustand oder wenn die Meldung höchstens 30 Minuten alt ist; ältere Meldungen der letzten 24 Stunden als Zeile „Meldung heute 13:09 · …“
 - „Aktualisiert vor x Min.“ und letzter Befehl
