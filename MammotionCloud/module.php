@@ -18,15 +18,16 @@ class MammotionCloud extends IPSModuleStrict
 {
     use MammotionPresentationHelper;
 
-    private const MODULE_VERSION = '1.1';
-    private const MODULE_BUILD = 1;
+    private const MODULE_VERSION = '1.2';
+    private const MODULE_BUILD = 4;
     private const AUTH_URL = 'https://id.mammotion.com/oauth2/token';
     private const API_URL = 'https://api-open.mammotion.com';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
     private const MOWER_MODULE = '{8297B983-0C40-4D50-8376-636028226AEE}';
 
     private const TOKEN_SAFETY_SECONDS = 300;
-    private const RECONNECT_SECONDS = 600;
+    private const RECONNECT_SECONDS = 600;      // erster neuer Anmeldeversuch nach abgelehnter Anmeldung
+    private const RECONNECT_MAX_SECONDS = 21600; // Wartezeit verdoppelt sich bis höchstens 6 Stunden
     private const HTTP_CONNECT_TIMEOUT = 10;
     private const HTTP_TIMEOUT = 20;
     private const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
@@ -61,6 +62,7 @@ class MammotionCloud extends IPSModuleStrict
         $this->RegisterAttributeString('RefreshToken', '');
         $this->RegisterAttributeInteger('TokenValidUntil', 0);
         $this->RegisterAttributeString('CredentialHash', '');
+        $this->RegisterAttributeInteger('AuthFailures', 0);
         $this->RegisterAttributeBoolean('LegacyCleanupDone', false);
 
         $this->RegisterTimer('ReconnectTimer', 0, 'IPS_RequestAction($_IPS["TARGET"], "TimerReconnect", 0);');
@@ -196,7 +198,7 @@ class MammotionCloud extends IPSModuleStrict
                 self::STATE_NOT_LOGGED_IN => '⏳ noch nicht angemeldet – erste Anfrage folgt mit dem nächsten Abruf',
                 self::STATE_CONNECTED     => '✅ verbunden',
                 self::STATE_DISTURBED     => '⚠️ gestört – vorübergehender Fehler, Mäher wiederholen selbstständig',
-                self::STATE_ERROR         => '❌ Anmeldung fehlgeschlagen – neuer Versuch alle 10 Minuten'
+                self::STATE_ERROR         => '❌ Anmeldung fehlgeschlagen – neuer Versuch nach 10 Minuten, danach immer seltener (höchstens alle 6 Stunden)'
             ];
             $lines[] = 'Cloud: ' . ($texts[$state] ?? '❔ unbekannt');
             $mowers = count(array_filter(IPS_GetInstanceListByModuleID(self::MOWER_MODULE), function ($id) {
@@ -247,6 +249,8 @@ class MammotionCloud extends IPSModuleStrict
     private function Initialize(): void
     {
         $this->SetTimerInterval('ReconnectTimer', 0);
+        // „Übernehmen“ startet die Wartezeit nach abgelehnter Anmeldung neu
+        $this->ResetAuthFailures();
 
         if (!$this->ReadPropertyBoolean('Active')) {
             $this->SetValue('CloudState', self::STATE_DISABLED);
@@ -331,6 +335,14 @@ class MammotionCloud extends IPSModuleStrict
             $this->SetStatus(self::STATUS_ACTIVE);
         }
         $this->SetTimerInterval('ReconnectTimer', 0);
+        $this->ResetAuthFailures();
+    }
+
+    private function ResetAuthFailures(): void
+    {
+        if ($this->ReadAttributeInteger('AuthFailures') !== 0) {
+            $this->WriteAttributeInteger('AuthFailures', 0);
+        }
     }
 
     private function RegisterError(string $message, int $state): void
@@ -338,9 +350,14 @@ class MammotionCloud extends IPSModuleStrict
         $this->SetValue('CloudState', $state);
         $this->SetValue('LastError', date('d.m.Y H:i:s') . ': ' . $message);
         if ($state === self::STATE_ERROR) {
-            // Anmeldung dauerhaft fehlgeschlagen: Kinder pausieren, periodisch neu versuchen
+            // Anmeldung abgelehnt: Kinder pausieren und mit wachsendem Abstand neu versuchen
+            // (10 Minuten, 20, 40 … bis höchstens 6 Stunden), damit das Konto nicht gesperrt wird
+            $failures = $this->ReadAttributeInteger('AuthFailures') + 1;
+            $this->WriteAttributeInteger('AuthFailures', $failures);
+            $wait = (int) min(self::RECONNECT_MAX_SECONDS, self::RECONNECT_SECONDS * 2 ** min(10, $failures - 1));
             $this->SetStatus(self::STATUS_AUTH);
-            $this->SetTimerInterval('ReconnectTimer', self::RECONNECT_SECONDS * 1000);
+            $this->SetTimerInterval('ReconnectTimer', $wait * 1000);
+            $this->SendDebug('Reconnect', sprintf('Anmeldung %d-mal abgelehnt – nächster Versuch in %d Minuten', $failures, $wait / 60), 0);
         }
     }
 
@@ -397,7 +414,10 @@ class MammotionCloud extends IPSModuleStrict
         $json = json_decode($http['body'], true);
         $payload = is_array($json['data'] ?? null) ? $json['data'] : $json;
 
-        if ($http['status'] >= 500 || $http['status'] === 429) {
+        // Nur eine echte Ablehnung (400/401/403 oder Antwort ohne Token) gilt als Anmeldefehler;
+        // Serverfehler, Ratenlimit und andere Codes sind vorübergehend und legen die Mäher nicht still
+        $rejected = in_array($http['status'], [400, 401, 403], true) || ($http['status'] >= 200 && $http['status'] < 300);
+        if (!$rejected) {
             throw new MammotionCloudException('Anmeldedienst vorübergehend nicht erreichbar (HTTP ' . $http['status'] . ')', MammotionCloudException::TRANSIENT);
         }
         if ($http['status'] < 200 || $http['status'] >= 300 || !is_array($payload) || empty($payload['access_token'])) {
@@ -463,9 +483,9 @@ class MammotionCloud extends IPSModuleStrict
                 $this->GetAccessToken(true);
                 return $this->ApiRequest($method, $path, $payload, false);
             }
-            $message = 'Zugriff verweigert (HTTP 401)';
-            $this->RegisterError($message, self::STATE_ERROR);
-            throw new MammotionCloudException($message, MammotionCloudException::AUTH);
+            // Der Token wurde gerade neu ausgestellt, die Anmeldung ist also in Ordnung: Der Endpunkt
+            // verweigert nur diese Anfrage. Nicht die ganze Cloud-Instanz (und damit alle Mäher) stilllegen.
+            throw new MammotionCloudException('Zugriff verweigert (HTTP 401) für ' . $path, MammotionCloudException::API);
         }
         if ($http['status'] >= 500 || $http['status'] === 429) {
             $message = 'Mammotion-Cloud vorübergehend nicht erreichbar (HTTP ' . $http['status'] . ')';

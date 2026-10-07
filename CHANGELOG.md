@@ -2,6 +2,18 @@
 
 Alle relevanten Änderungen werden in dieser Datei dokumentiert.
 
+## [1.2] - 2026-10-07
+
+Build 4.
+
+- Cloud: Ein HTTP 401 an einem einzelnen Endpunkt (trotz frisch ausgestelltem Token) legt nicht mehr die ganze Cloud-Instanz und damit alle Mäher für 10 Minuten still, sondern gilt nur für diese Anfrage
+- Cloud: Nur eine echte Ablehnung am Token-Endpunkt (HTTP 400/401/403) gilt als Anmeldefehler; Serverfehler, Ratenlimit und andere Codes sind vorübergehend
+- Cloud: Nach abgelehnter Anmeldung wächst die Wartezeit (10 Minuten, 20, 40 … bis höchstens 6 Stunden) statt fest alle 10 Minuten; „Übernehmen“ setzt sie zurück
+- Mäher: Variablen werden nur noch bei Änderung geschrieben; der Systemzustand springt nicht mehr bei jedem Abruf auf „Prüfung läuft“ und zurück (keine unnötigen Ereignisse)
+- Mäher: „Steuerung“ und „Aufgabe starten“ werden erst nach angenommenem Befehl gesetzt; schlägt ein Befehl fehl, bekommt die Kachel sofort wieder den echten Stand
+- Mäher: „Übernehmen“ gibt die Abrufsperre nicht mehr frei, ein laufender Abruf wird nicht von einem zweiten überholt
+- Kachel: Befehlsknöpfe 36 px hoch; Animationen pausieren, wenn die Kachel nicht sichtbar ist; Zustandsfarben aus den Farb-Tokens statt fester Werte
+
 ## [1.1] - 2026-10-06
 
 Build 3.

@@ -17,8 +17,8 @@ class MammotionMower extends IPSModuleStrict
 {
     use MammotionPresentationHelper;
 
-    private const MODULE_VERSION = '1.1';
-    private const MODULE_BUILD = 1;
+    private const MODULE_VERSION = '1.2';
+    private const MODULE_BUILD = 4;
     private const CLOUD_MODULE = '{D26140D0-FC03-43F8-AAB0-1E4220D959EB}';
     private const DATA_TX = '{5F140107-E29A-41AA-9314-01891DDE02F9}';
 
@@ -140,7 +140,8 @@ class MammotionMower extends IPSModuleStrict
         $this->CleanupLegacyProfiles();
         $this->SetVisualizationType($this->ReadPropertyBoolean('EnableTile') ? 1 : 0);
         $this->UpdateMediaReference();
-        $this->ReleaseRefreshLock();
+        // Die Abrufsperre bleibt bestehen: Ein gerade laufender Abruf darf nicht durch einen zweiten
+        // überholt werden. Eine verwaiste Sperre verfällt nach REFRESH_LOCK_TIMEOUT von selbst.
         $this->ResetRetry();
         $this->SetBufferInt('NextExtrasFetch', 0);
         $this->SetBuffer('TileHash', '');
@@ -188,17 +189,33 @@ class MammotionMower extends IPSModuleStrict
                 if (!isset(self::ACTIONS[$v])) {
                     throw new InvalidArgumentException('Unbekannter Steuerbefehl.');
                 }
-                $this->SetValue('Control', $v);
-                $this->ExecuteAction(self::ACTIONS[$v]);
+                try {
+                    $ok = $this->ExecuteAction(self::ACTIONS[$v]);
+                } catch (Throwable $e) {
+                    // Kachel zeigt „Befehl gesendet …“: echten Stand erneut senden
+                    $this->UpdateTile(true);
+                    throw $e;
+                }
+                // erst nach angenommenem Befehl setzen, sonst zeigt die Variable eine nicht ausgeführte Aktion
+                if ($ok) {
+                    $this->SetValue('Control', $v);
+                }
                 return;
             case 'Task':
                 $map = json_decode($this->ReadAttributeString('TaskMap'), true) ?: [];
                 $key = (string) (int) $Value;
-                if (!isset($map[$key])) {
-                    throw new RuntimeException('Aufgabe unbekannt. Bitte zuerst aktualisieren.');
+                try {
+                    if (!isset($map[$key])) {
+                        throw new RuntimeException('Aufgabe unbekannt. Bitte zuerst aktualisieren.');
+                    }
+                    $ok = $this->StartTask((string) $map[$key]['name']);
+                } catch (Throwable $e) {
+                    $this->UpdateTile(true);
+                    throw $e;
                 }
-                $this->SetValue('Task', (int) $Value);
-                $this->StartTask((string) $map[$key]['name']);
+                if ($ok) {
+                    $this->SetValue('Task', (int) $Value);
+                }
                 return;
         }
         throw new InvalidArgumentException('Unbekannte Aktion: ' . $Ident);
@@ -355,8 +372,8 @@ class MammotionMower extends IPSModuleStrict
 
         if (!$this->ReadPropertyBoolean('Active')) {
             $this->SetTimerInterval('UpdateTimer', 0);
-            $this->SetValue('SystemState', self::SYS_DISABLED);
-            $this->SetValue('Diagnostic', 'Instanz ist deaktiviert');
+            $this->SetValueIfChanged('SystemState', self::SYS_DISABLED);
+            $this->SetValueIfChanged('Diagnostic', 'Instanz ist deaktiviert');
             $this->SetStatus(self::STATUS_INACTIVE);
             $this->UpdateTile();
             return;
@@ -364,14 +381,14 @@ class MammotionMower extends IPSModuleStrict
 
         if ($this->ReadPropertyInteger('PollInterval') < self::MIN_INTERVAL) {
             $this->SetTimerInterval('UpdateTimer', 0);
-            $this->SetValue('SystemState', self::SYS_ERROR);
-            $this->SetValue('Diagnostic', 'Abfrageintervall muss mindestens ' . self::MIN_INTERVAL . ' Sekunden betragen');
+            $this->SetValueIfChanged('SystemState', self::SYS_ERROR);
+            $this->SetValueIfChanged('Diagnostic', 'Abfrageintervall muss mindestens ' . self::MIN_INTERVAL . ' Sekunden betragen');
             $this->SetStatus(self::STATUS_CONFIG);
             $this->UpdateTile();
             return;
         }
 
-        $this->SetValue('SystemState', self::SYS_INIT);
+        $this->SetValueIfChanged('SystemState', self::SYS_INIT);
         $this->SetStatus(self::STATUS_ACTIVE);
         $this->SetTimerInterval('UpdateTimer', $this->ReadPropertyInteger('PollInterval') * 1000);
         $this->SetTimerInterval('DelayedRefreshTimer', 2000);
@@ -388,8 +405,8 @@ class MammotionMower extends IPSModuleStrict
             return false;
         }
         if (!$this->HasActiveParent()) {
-            $this->SetValue('SystemState', self::SYS_ERROR);
-            $this->SetValue('Diagnostic', 'Cloud-Instanz ist nicht verbunden oder nicht aktiv');
+            $this->SetValueIfChanged('SystemState', self::SYS_ERROR);
+            $this->SetValueIfChanged('Diagnostic', 'Cloud-Instanz ist nicht verbunden oder nicht aktiv');
             $this->SetStatus(self::STATUS_NO_CLOUD);
             $this->UpdateTile();
             return false;
@@ -399,8 +416,12 @@ class MammotionMower extends IPSModuleStrict
             return false;
         }
 
-        $this->SetValue('SystemState', self::SYS_CHECKING);
-        $this->SetValue('LastAttempt', time());
+        // „Prüfung läuft“ nur beim Start oder nach einem Fehler – nicht bei jedem Abruf zwischen
+        // „Betriebsbereit“ und „Prüfung läuft“ wechseln (löst sonst jedes Mal Ereignisse aus)
+        if (in_array((int) $this->GetValue('SystemState'), [self::SYS_INIT, self::SYS_ERROR], true)) {
+            $this->SetValueIfChanged('SystemState', self::SYS_CHECKING);
+        }
+        $this->SetValueIfChanged('LastAttempt', time());
         $steps = [];
 
         try {
@@ -548,31 +569,31 @@ class MammotionMower extends IPSModuleStrict
     private function CompleteSuccess(array $steps, array $partial): void
     {
         $partialState = count($partial) > 0;
-        $this->SetValue('SystemState', $partialState ? self::SYS_PARTIAL : self::SYS_READY);
-        $this->SetValue('Diagnostic', implode(' | ', array_merge($steps, $partial)));
-        $this->SetValue('LastSuccess', time());
+        $this->SetValueIfChanged('SystemState', $partialState ? self::SYS_PARTIAL : self::SYS_READY);
+        $this->SetValueIfChanged('Diagnostic', implode(' | ', array_merge($steps, $partial)));
+        $this->SetValueIfChanged('LastSuccess', time());
         $this->SetStatus(self::STATUS_ACTIVE);
         $this->ResetRetry();
     }
 
     private function CompleteOffline(array $steps): void
     {
-        $this->SetValue('Online', false);
-        $this->SetValue('Status', 'Offline');
-        $this->SetValue('OperationStatus', self::OP_OFFLINE);
-        $this->SetValue('SystemState', self::SYS_OFFLINE);
-        $this->SetValue('Diagnostic', implode(' | ', $steps));
-        $this->SetValue('LastSuccess', time());
+        $this->SetValueIfChanged('Online', false);
+        $this->SetValueIfChanged('Status', 'Offline');
+        $this->SetValueIfChanged('OperationStatus', self::OP_OFFLINE);
+        $this->SetValueIfChanged('SystemState', self::SYS_OFFLINE);
+        $this->SetValueIfChanged('Diagnostic', implode(' | ', $steps));
+        $this->SetValueIfChanged('LastSuccess', time());
         $this->SetStatus(self::STATUS_ACTIVE);
         $this->ResetRetry();
     }
 
     private function CompleteFailure(int $code, string $message): void
     {
-        $this->SetValue('SystemState', self::SYS_ERROR);
-        $this->SetValue('Diagnostic', $message);
+        $this->SetValueIfChanged('SystemState', self::SYS_ERROR);
+        $this->SetValueIfChanged('Diagnostic', $message);
         if ($code !== self::ERR_NOT_FOUND) {
-            $this->SetValue('OperationStatus', self::OP_CLOUD_ERROR);
+            $this->SetValueIfChanged('OperationStatus', self::OP_CLOUD_ERROR);
         }
         $this->SetStatus($code === self::ERR_NOT_FOUND ? self::STATUS_NOT_FOUND : self::STATUS_API);
         $this->ResetRetry();
@@ -587,7 +608,7 @@ class MammotionMower extends IPSModuleStrict
         $delay = self::RETRY_DELAYS[$attempt];
         $attempt++;
         $this->SetBufferInt('RetryAttempt', $attempt);
-        $this->SetValue('Diagnostic', 'Wiederholung ' . $attempt . '/' . count(self::RETRY_DELAYS) . ' in ' . $delay . ' s: ' . $message);
+        $this->SetValueIfChanged('Diagnostic', 'Wiederholung ' . $attempt . '/' . count(self::RETRY_DELAYS) . ' in ' . $delay . ' s: ' . $message);
         $this->SetTimerInterval('RetryTimer', $delay * 1000);
         return true;
     }
@@ -642,6 +663,14 @@ class MammotionMower extends IPSModuleStrict
         $this->SetBuffer($name, (string) $value);
     }
 
+    private function SetValueIfChanged(string $ident, mixed $value): void
+    {
+        // Variablen nur bei Änderung schreiben: keine unnötigen Ereignisse, Archiveinträge und Kachel-Updates
+        if ($this->GetValue($ident) !== $value) {
+            $this->SetValue($ident, $value);
+        }
+    }
+
     private function WriteAttributeIfChanged(string $name, string $value): void
     {
         if ($this->ReadAttributeString($name) !== $value) {
@@ -680,12 +709,12 @@ class MammotionMower extends IPSModuleStrict
         try {
             $response = $this->Api('POST', '/v1/mower/action', $payload);
         } catch (Throwable $e) {
-            $this->SetValue('LastCommand', $action . ' fehlgeschlagen (' . date('H:i:s') . '): ' . $e->getMessage());
+            $this->SetValueIfChanged('LastCommand', $action . ' fehlgeschlagen (' . date('H:i:s') . '): ' . $e->getMessage());
             $this->UpdateTile();
             throw $e;
         }
         $ok = (bool) ($response['data']['commandResult'] ?? true);
-        $this->SetValue('LastCommand', $action . ($ok ? ' gesendet' : ' abgelehnt') . ' (' . date('d.m.Y H:i:s') . ')');
+        $this->SetValueIfChanged('LastCommand', $action . ($ok ? ' gesendet' : ' abgelehnt') . ' (' . date('d.m.Y H:i:s') . ')');
         $this->UpdateTile();
         // Status kurz nach dem Befehl neu einlesen
         $this->SetTimerInterval('DelayedRefreshTimer', self::COMMAND_REFRESH_DELAY * 1000);
@@ -744,21 +773,21 @@ class MammotionMower extends IPSModuleStrict
         $network = is_array($data['network'] ?? null) ? $data['network'] : [];
         $online = ((int) ($data['online'] ?? 1)) === 1;
         $raw = (string) ($data['status'] ?? '');
-        $this->SetValue('Online', $online);
-        $this->SetValue('Status', $raw !== '' ? $raw : 'Unbekannt');
+        $this->SetValueIfChanged('Online', $online);
+        $this->SetValueIfChanged('Status', $raw !== '' ? $raw : 'Unbekannt');
         $charge = (int) ($data['chargeStatus'] ?? 0);
         $operation = $this->MapOperationStatus($raw, $online);
         if ($operation === self::OP_READY && $charge !== 0) {
             // Standby mit Ladestatus ungleich 0: Mäher steht in der Ladestation
             $operation = self::OP_CHARGING;
         }
-        $this->SetValue('OperationStatus', $operation);
-        $this->SetValue('Battery', max(0, min(100, (int) ($data['batteryLevel'] ?? 0))));
-        $this->SetValue('Firmware', (string) ($data['version'] ?? ''));
-        $this->SetValue('ChargeStatus', (int) ($data['chargeStatus'] ?? 0));
-        $this->SetValue('WifiRSSI', (int) ($network['wifiRssi'] ?? 0));
-        $this->SetValue('WifiIP', (string) ($network['wifiIp'] ?? ''));
-        $this->SetValue('CellularRSSI', (int) ($network['cellularRssi'] ?? 0));
+        $this->SetValueIfChanged('OperationStatus', $operation);
+        $this->SetValueIfChanged('Battery', max(0, min(100, (int) ($data['batteryLevel'] ?? 0))));
+        $this->SetValueIfChanged('Firmware', (string) ($data['version'] ?? ''));
+        $this->SetValueIfChanged('ChargeStatus', (int) ($data['chargeStatus'] ?? 0));
+        $this->SetValueIfChanged('WifiRSSI', (int) ($network['wifiRssi'] ?? 0));
+        $this->SetValueIfChanged('WifiIP', (string) ($network['wifiIp'] ?? ''));
+        $this->SetValueIfChanged('CellularRSSI', (int) ($network['cellularRssi'] ?? 0));
     }
 
     private function MapOperationStatus(string $raw, bool $online): int
@@ -854,10 +883,10 @@ class MammotionMower extends IPSModuleStrict
             'range-7d'  => ['deviceId' => $id, 'pageNumber' => 1, 'pageSize' => 10] + $this->ReportRange(7)
         ]);
         $d = is_array($r['data'] ?? null) ? $r['data'] : [];
-        $this->SetValue('TotalWorkCount', (int) ($d['workCount'] ?? 0));
-        $this->SetValue('TotalWorkArea', round((float) ($d['totalWorkArea'] ?? 0), 1));
-        $this->SetValue('TotalSaveTime', round((float) ($d['saveTime'] ?? 0) / 60, 1));
-        $this->SetValue('TotalCarbon', round((float) ($d['carbonReduction'] ?? 0) / 1000, 2));
+        $this->SetValueIfChanged('TotalWorkCount', (int) ($d['workCount'] ?? 0));
+        $this->SetValueIfChanged('TotalWorkArea', round((float) ($d['totalWorkArea'] ?? 0), 1));
+        $this->SetValueIfChanged('TotalSaveTime', round((float) ($d['saveTime'] ?? 0) / 60, 1));
+        $this->SetValueIfChanged('TotalCarbon', round((float) ($d['carbonReduction'] ?? 0) / 1000, 2));
     }
 
     private function FetchLastWork(string $id): void
@@ -879,12 +908,12 @@ class MammotionMower extends IPSModuleStrict
         if ($latest === null) {
             return;
         }
-        $this->SetValue('LastWorkEnd', intdiv((int) ($latest['endWorkTime'] ?? 0), 1000));
-        $this->SetValue('LastWorkResult', (int) ($latest['workResult'] ?? 0));
-        $this->SetValue('LastWorkType', (int) ($latest['workType'] ?? 0));
-        $this->SetValue('LastWorkArea', round((float) ($latest['workArea'] ?? 0), 1));
-        $this->SetValue('LastWorkDuration', (int) round((int) ($latest['workTimeUsed'] ?? 0) / 60));
-        $this->SetValue('LastWorkProgress', (int) round((float) ($latest['workProgress'] ?? 0)));
+        $this->SetValueIfChanged('LastWorkEnd', intdiv((int) ($latest['endWorkTime'] ?? 0), 1000));
+        $this->SetValueIfChanged('LastWorkResult', (int) ($latest['workResult'] ?? 0));
+        $this->SetValueIfChanged('LastWorkType', (int) ($latest['workType'] ?? 0));
+        $this->SetValueIfChanged('LastWorkArea', round((float) ($latest['workArea'] ?? 0), 1));
+        $this->SetValueIfChanged('LastWorkDuration', (int) round((int) ($latest['workTimeUsed'] ?? 0) / 60));
+        $this->SetValueIfChanged('LastWorkProgress', (int) round((float) ($latest['workProgress'] ?? 0)));
 
         // Details nur laden, wenn ein neuer Einsatz dazugekommen ist
         $workId = (string) ($latest['workId'] ?? '');
@@ -893,13 +922,13 @@ class MammotionMower extends IPSModuleStrict
         }
         $detail = $this->Api('GET', '/v1/mower/' . rawurlencode($id) . '/work-reports/' . rawurlencode($workId));
         $d = is_array($detail['data'] ?? null) ? $detail['data'] : [];
-        $this->SetValue('LastWorkEnergy', round((float) ($d['energyConsume'] ?? 0), 1));
+        $this->SetValueIfChanged('LastWorkEnergy', round((float) ($d['energyConsume'] ?? 0), 1));
         $param = is_array($d['workParam'] ?? null) ? $d['workParam'] : [];
         if ((int) ($param['knifeHeight'] ?? 0) > 0) {
-            $this->SetValue('KnifeHeight', (int) $param['knifeHeight']);
+            $this->SetValueIfChanged('KnifeHeight', (int) $param['knifeHeight']);
         }
         if (isset($param['speed'])) {
-            $this->SetValue('Speed', (int) $param['speed']);
+            $this->SetValueIfChanged('Speed', (int) $param['speed']);
         }
         $this->WriteAttributeString('LastWorkId', $workId);
     }
@@ -914,7 +943,7 @@ class MammotionMower extends IPSModuleStrict
             'endDate'    => date('Y-m-d')
         ]);
         $records = is_array($r['data']['records'] ?? null) ? $r['data']['records'] : [];
-        $this->SetValue('ErrorCount30d', (int) ($r['data']['total'] ?? count($records)));
+        $this->SetValueIfChanged('ErrorCount30d', (int) ($r['data']['total'] ?? count($records)));
         $latest = null;
         foreach ($records as $record) {
             if ($latest === null || (int) ($record['gmtCreate'] ?? 0) > (int) ($latest['gmtCreate'] ?? 0)) {
@@ -922,13 +951,13 @@ class MammotionMower extends IPSModuleStrict
             }
         }
         if ($latest === null) {
-            $this->SetValue('LastErrorText', 'Keine Fehler in den letzten ' . self::REPORT_DAYS . ' Tagen');
-            $this->SetValue('LastErrorTime', 0);
+            $this->SetValueIfChanged('LastErrorText', 'Keine Fehler in den letzten ' . self::REPORT_DAYS . ' Tagen');
+            $this->SetValueIfChanged('LastErrorTime', 0);
             return;
         }
         $text = trim((string) ($latest['implication'] ?? ''));
-        $this->SetValue('LastErrorText', 'Code ' . (int) ($latest['code'] ?? 0) . ($text !== '' ? ' – ' . $text : ''));
-        $this->SetValue('LastErrorTime', intdiv((int) ($latest['gmtCreate'] ?? 0), 1000));
+        $this->SetValueIfChanged('LastErrorText', 'Code ' . (int) ($latest['code'] ?? 0) . ($text !== '' ? ' – ' . $text : ''));
+        $this->SetValueIfChanged('LastErrorTime', intdiv((int) ($latest['gmtCreate'] ?? 0), 1000));
     }
 
     // ------------------------------------------------------------------
@@ -1128,15 +1157,15 @@ class MammotionMower extends IPSModuleStrict
         }
     }
 
-    private function UpdateTile(): void
+    private function UpdateTile(bool $force = false): void
     {
         if (!$this->ReadPropertyBoolean('EnableTile')) {
             return;
         }
         $json = (string) json_encode($this->BuildTileState(), JSON_UNESCAPED_UNICODE);
-        // Geschwindigkeit: nur senden, wenn sich der Inhalt geändert hat
+        // Geschwindigkeit: nur senden, wenn sich der Inhalt geändert hat ($force: nach fehlgeschlagenem Befehl trotzdem)
         $hash = md5($json);
-        if ($hash === $this->GetBuffer('TileHash')) {
+        if (!$force && $hash === $this->GetBuffer('TileHash')) {
             return;
         }
         $this->SetBuffer('TileHash', $hash);

@@ -81,7 +81,7 @@
     { "code": 102, "icon": "active", "caption": "Verbunden" },
     { "code": 104, "icon": "inactive", "caption": "Instanz deaktiviert" },
     { "code": 200, "icon": "error", "caption": "Client-ID oder Client-Secret fehlt" },
-    { "code": 201, "icon": "error", "caption": "Anmeldung fehlgeschlagen, neuer Versuch alle 10 Minuten" },
+    { "code": 201, "icon": "error", "caption": "Anmeldung fehlgeschlagen, neuer Versuch nach 10 Minuten, danach seltener" },
     { "code": 202, "icon": "inactive", "caption": "Nutzungshinweis noch nicht bestätigt" }
   ]
 }

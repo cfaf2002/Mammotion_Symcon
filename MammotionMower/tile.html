@@ -84,6 +84,8 @@
     --line: rgba(241, 245, 249, .16); --surface: rgba(8, 13, 25, .45); --surface-hover: rgba(241, 245, 249, .16);
   }
   @keyframes mow { from { transform: translateX(0); } to { transform: translateX(122px); } }
+  /* Unsichtbare Kachel (anderer Tab, weggescrollt): Animationen anhalten */
+  .tile.paused .grass, .tile.paused .badge i { animation-play-state: paused; }
   .tile > *:not(.grass) { position: relative; }
 
   header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
@@ -153,7 +155,7 @@
   .row { display: flex; gap: 8px; }
   .cmdbar { display: flex; gap: 4px; padding: 4px; border-radius: var(--radius-l); background: var(--surface); border: 1px solid var(--line); }
   .cmd {
-    flex: 1 1 0; min-width: 0; height: 34px; padding: 0 8px; border: 0; border-radius: var(--radius-s); cursor: pointer;
+    flex: 1 1 0; min-width: 0; height: 36px; padding: 0 8px; border: 0; border-radius: var(--radius-s); cursor: pointer;
     font: inherit; font-size: 12px; font-weight: 700; color: var(--mut); background: transparent;
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; overflow: hidden;
     transition: background .2s, color .2s, transform .1s;
@@ -291,11 +293,12 @@
     };
 
     // Betriebsstatus: 0 Offline, 1 Bereit, 2 Mäht, 3 Pausiert, 4 Lädt, 5 Heimfahrt, 6 Gerätefehler, 7 API/Cloud-Fehler, 8 Unbekannt
+    // Farben aus den Tokens der Kachel-Grundlage (Heimfahrt und Cloud-Fehler daraus gemischt)
+    var OFF = 'var(--off)', OK = 'var(--ok)', WARN = 'var(--warn)', BAD = 'var(--bad)', INFO = 'var(--info)';
     var OP = {
-      // Farben nach Hausstil: --ok #34b36b, --warn #e2a63b, --bad #e5484d, --info #4b8ef0, --off #8796a5
-      0: ['Offline', '#8796a5', 'OFFLINE'], 1: ['Bereit', '#34b36b', 'BEREIT'], 2: ['Mäht', '#34b36b', 'MÄHT'],
-      3: ['Pausiert', '#e2a63b', 'PAUSE'], 4: ['In der Station', '#4b8ef0', 'STATION'], 5: ['Heimfahrt', '#8b5cf6', 'HEIMFAHRT'],
-      6: ['Gerätefehler', '#e5484d', 'FEHLER'], 7: ['Cloud-Fehler', '#f97316', 'CLOUD'], 8: ['Unbekannt', '#8796a5', 'STATUS ?']
+      0: ['Offline', OFF, 'OFFLINE'], 1: ['Bereit', OK, 'BEREIT'], 2: ['Mäht', OK, 'MÄHT'],
+      3: ['Pausiert', WARN, 'PAUSE'], 4: ['In der Station', INFO, 'STATION'], 5: ['Heimfahrt', 'color-mix(in srgb, var(--info) 60%, var(--bad))', 'HEIMFAHRT'],
+      6: ['Gerätefehler', BAD, 'FEHLER'], 7: ['Cloud-Fehler', 'color-mix(in srgb, var(--warn) 55%, var(--bad))', 'CLOUD'], 8: ['Unbekannt', OFF, 'STATUS ?']
     };
 
     function $(id) { return document.getElementById(id); }
@@ -429,10 +432,10 @@
       var label = info[0], color = info[1], badge = info[2], sub = '';
 
       var note = '';
-      if (!S.active) { label = 'Deaktiviert'; color = '#8796a5'; badge = 'AUS'; sub = 'Instanz ist ausgeschaltet'; }
-      else if (S.system === 0 && !S.lastSuccess) { label = 'Startet …'; color = '#8796a5'; badge = 'START'; }
-      else if (S.system === 5 && S.op !== 7) { label = 'Fehler'; color = '#e5484d'; badge = 'FEHLER'; sub = shortError(S.diagnostic); }
-      else if (!S.online && S.op !== 7) { label = 'Offline'; color = '#8796a5'; badge = 'OFFLINE'; sub = 'Schläft oder nicht erreichbar'; }
+      if (!S.active) { label = 'Deaktiviert'; color = OFF; badge = 'AUS'; sub = 'Instanz ist ausgeschaltet'; }
+      else if (S.system === 0 && !S.lastSuccess) { label = 'Startet …'; color = OFF; badge = 'START'; }
+      else if (S.system === 5 && S.op !== 7) { label = 'Fehler'; color = BAD; badge = 'FEHLER'; sub = shortError(S.diagnostic); }
+      else if (!S.online && S.op !== 7) { label = 'Offline'; color = OFF; badge = 'OFFLINE'; sub = 'Schläft oder nicht erreichbar'; }
       else if (S.op === 7) { sub = shortError(S.diagnostic); }
       else if (S.op === 8 && S.raw) { sub = 'Rohstatus: ' + S.raw; }
       else if (S.op === 4) { sub = (S.battery | 0) < 100 ? 'Lädt' : 'Voll geladen'; }
@@ -456,7 +459,7 @@
       tile.classList.toggle('bg-none', bg.mode === 2);
       tile.style.setProperty('--shade', String((bg.dim | 0) / 100));
       var batt = Math.max(0, Math.min(100, S.battery | 0));
-      var bcol = batt < 20 ? '#e5484d' : batt < 40 ? '#e2a63b' : '#34b36b';
+      var bcol = batt < 20 ? BAD : batt < 40 ? WARN : OK;
       tile.style.setProperty('--b', bcol);
       tile.classList.toggle('dim', !S.active || !S.online);
       tile.classList.toggle('mowing', S.active && S.online && S.op === 2);
@@ -532,6 +535,18 @@
       render();
     };
 
-    setInterval(function () { if (S) txt('upd', ago(S.lastSuccess)); }, 30000);
+    // Animationen nur bei sichtbarer Kachel (Tab im Vordergrund und im sichtbaren Bereich)
+    var onScreen = true;
+    function updatePaused() { $('tile').classList.toggle('paused', document.hidden || !onScreen); }
+    document.addEventListener('visibilitychange', updatePaused);
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        onScreen = entries[entries.length - 1].isIntersecting;
+        updatePaused();
+      }).observe($('tile'));
+    }
+    updatePaused();
+
+    setInterval(function () { if (S && !document.hidden) txt('upd', ago(S.lastSuccess)); }, 30000);
   })();
 </script>

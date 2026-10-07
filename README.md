@@ -2,7 +2,7 @@
 
 [![IP-Symcon ab 9.0](https://img.shields.io/badge/IP--Symcon-ab_9.0-0b6fb3.svg)](https://www.symcon.de)
 [![Optimiert für Symcon 9.0](https://img.shields.io/badge/optimiert_f%C3%BCr-Symcon_9.0-0b6fb3.svg)](https://www.symcon.de/de/service/dokumentation/installation/migrationen/v81-v90-q1-2026/)
-[![Modul-Version 1.1 (Build 3)](https://img.shields.io/badge/Modul--Version-1.1_(Build_3)-informational.svg)](library.json)
+[![Modul-Version 1.2 (Build 4)](https://img.shields.io/badge/Modul--Version-1.2_(Build_4)-informational.svg)](library.json)
 [![Tests](https://github.com/cfaf2002/Mammotion_Symcon/actions/workflows/tests.yml/badge.svg)](https://github.com/cfaf2002/Mammotion_Symcon/actions/workflows/tests.yml)
 [![PHP 8.3 und 8.5](https://img.shields.io/badge/PHP-8.3_%7C_8.5-777bb4.svg?logo=php&logoColor=white)](https://www.php.net)
 [![SDK: IPSModuleStrict](https://img.shields.io/badge/SDK-IPSModuleStrict-success.svg)](https://www.symcon.de/de/service/dokumentation/entwicklerbereich/sdk-tools/sdk-php/module/)
@@ -64,7 +64,8 @@ Die Zugangsdaten werden nur einmal in der Cloud-Instanz hinterlegt. Alle Mäher 
 - Token-Abruf gegen parallele Anfragen mehrerer Mäher abgesichert
 - einmalige Neuanmeldung nach HTTP 401
 - Einordnung jeder Störung (vorübergehend, Anmeldung, API, Mäher offline) für die Mäher-Instanzen
-- automatischer neuer Anmeldeversuch alle 10 Minuten nach fehlgeschlagener Anmeldung
+- automatischer neuer Anmeldeversuch nach fehlgeschlagener Anmeldung: zuerst nach 10 Minuten, dann mit doppeltem Abstand bis höchstens alle 6 Stunden (schützt das Konto vor einer Sperre); **Übernehmen** versucht es sofort erneut
+- Serverfehler, Ratenlimit (HTTP 429) und Netzwerkfehler gelten nicht als Anmeldefehler und legen die Mäher nicht still
 
 ### Mammotion Konfigurator
 
@@ -210,7 +211,7 @@ Access-Token, Refresh-Token und Client-Secret werden nur intern als Attribute ge
 | 102 | aktiv |
 | 104 | Instanz deaktiviert |
 | 200 | Client-ID oder Client-Secret fehlt |
-| 201 | Anmeldung fehlgeschlagen, neuer Versuch alle 10 Minuten |
+| 201 | Anmeldung fehlgeschlagen, neuer Versuch nach 10 Minuten, danach mit wachsendem Abstand (höchstens alle 6 Stunden) |
 | 202 | Nutzungshinweis noch nicht bestätigt |
 
 Vorübergehende Störungen wie Timeouts oder HTTP 5xx ändern den Instanzstatus nicht, damit die Mäher-Instanzen weiter abrufen und sich selbst erholen können.
@@ -464,14 +465,15 @@ Die offizielle Spezifikation (abrufbar unter `https://api-open.mammotion.com/api
 | Fehlerart | Beispiel | Verhalten |
 |---|---|---|
 | vorübergehend | Timeout, HTTP 5xx, HTTP 429 | Wiederholung nach 5 und 15 Sekunden, danach Fehler |
-| Anmeldung | `invalid_client`, erneut HTTP 401 | keine Wiederholung, Cloud-Status 201, neuer Anmeldeversuch alle 10 Minuten |
+| Anmeldung | `invalid_client`, Token-Endpunkt antwortet mit HTTP 400/401/403 | keine Wiederholung, Cloud-Status 201, neuer Anmeldeversuch nach 10 Minuten, danach mit wachsendem Abstand bis höchstens 6 Stunden |
+| Zugriff verweigert | ein Endpunkt antwortet trotz frischem Token mit HTTP 401 | wie API-Fehler: betrifft nur diese Anfrage, die Cloud-Instanz bleibt aktiv |
 | API | HTTP 4xx, API-Code ungleich 0 | keine Wiederholung, Details in **Diagnose** |
 | Mäher offline | „device is offline“ | kein Fehler, Systemzustand **Offline** |
 | Gerät unbekannt | Device-ID nicht im Konto | Status 202, keine Wiederholung |
 
 Scheitern nur Arbeitsparameter oder Aufgaben, bleiben die Basisdaten gültig und der Systemzustand wird **Teilweise verfügbar**.
 
-Ein Abruf sperrt weitere Abrufe derselben Instanz. Bleibt die Sperre durch einen Skriptabbruch oder Neustart stehen, wird sie nach 180 Sekunden automatisch übernommen. **Übernehmen** gibt sie sofort frei.
+Ein Abruf sperrt weitere Abrufe derselben Instanz. Bleibt die Sperre durch einen Skriptabbruch stehen, wird sie nach 180 Sekunden automatisch übernommen; nach einem Neustart ist sie leer. **Übernehmen** gibt sie nicht frei, damit ein laufender Abruf nicht von einem zweiten überholt wird.
 
 ## Sicherheitshinweise
 
